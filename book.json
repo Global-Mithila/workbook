@@ -1,0 +1,39 @@
+{
+  "name": "24-Hour Incident Summary Dashboard",
+  "gridData": {
+    "h": 12,
+    "w": 24
+  },
+  "panels": [
+    {
+      "type": "Tile",
+      "name": "Total Incidents (24h)",
+      "query": "SecurityIncident | where TimeGenerated > ago(24h) | count"
+    },
+    {
+      "type": "Tile",
+      "name": "Open Incidents",
+      "query": "SecurityIncident | where TimeGenerated > ago(24h) | where Status in ('New', 'Active') | count"
+    },
+    {
+      "type": "Tile",
+      "name": "Avg MTTR",
+      "query": "SecurityIncident | where TimeGenerated > ago(24h) | where Status == 'Closed' | extend MTTR = datetime_diff('minute', ClosedTime, CreatedTime) | summarize avg(MTTR)/60"
+    },
+    {
+      "type": "BarChart",
+      "name": "Incidents by Severity",
+      "query": "SecurityIncident | where TimeGenerated > ago(24h) | summarize Count = count() by Severity"
+    },
+    {
+      "type": "BarChart",
+      "name": "Incidents by Status",
+      "query": "SecurityIncident | where TimeGenerated > ago(24h) | summarize Count = count() by Status"
+    },
+    {
+      "type": "TimeChart",
+      "name": "Incident Creation Over Time",
+      "query": "SecurityIncident | where TimeGenerated > ago(24h) | summarize Count = count() by bin(TimeGenerated, 1h)"
+    }
+  ]
+}
