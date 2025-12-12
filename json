@@ -1,0 +1,11 @@
+@and(
+    not(startswith(item(), '10.')),
+    not(startswith(item(), '192.168.')),
+    not(startswith(item(), '127.')),
+    not(equals(item(), '::1')),
+    not(and(
+        startswith(item(), '172.'),
+        greaterOrEquals(int(split(item(), '.')[1]), 16),
+        lessOrEquals(int(split(item(), '.')[1]), 31)
+    ))
+)
