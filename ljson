@@ -49,6 +49,9 @@
                     "body": {
                         "entities": "@triggerBody()['object']['properties']['relatedEntities']"
                     },
+                    "headers": {
+                        "Content-Type": "application/json"
+                    },
                     "host": {
                         "connection": {
                             "name": "@parameters('$connections')['azuresentinel']['connectionId']"
