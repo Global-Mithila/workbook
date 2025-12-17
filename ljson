@@ -38,7 +38,7 @@
                     ]
                 }
             },
-            "Entities_-_Get_All_Incident_Entities": {
+            "Entities_-_Get_IPs": {
                 "runAfter": {
                     "Initialize_MaliciousFindings_Array": [
                         "Succeeded"
@@ -46,41 +46,33 @@
                 },
                 "type": "ApiConnection",
                 "inputs": {
+                    "body": {
+                        "entities": "@triggerBody()?['object']?['properties']?['relatedEntities']"
+                    },
+                    "headers": {
+                        "Content-Type": "application/json"
+                    },
                     "host": {
                         "connection": {
                             "name": "@parameters('$connections')['azuresentinel']['connectionId']"
                         }
                     },
                     "method": "post",
-                    "path": "/incidents/@{encodeURIComponent(triggerBody()['object']['id'])}/entities"
-                },
-                "description": "Fetches fresh entities directly from the Incident ID"
-            },
-            "Filter_Array_-_Get_Only_IPs": {
-                "runAfter": {
-                    "Entities_-_Get_All_Incident_Entities": [
-                        "Succeeded"
-                    ]
-                },
-                "type": "Query",
-                "inputs": {
-                    "from": "@body('Entities_-_Get_All_Incident_Entities')['entities']",
-                    "where": "@equals(item()['kind'], 'Ip')"
-                },
-                "description": "Keeps only entities where kind is 'Ip'"
+                    "path": "/entities/ip"
+                }
             },
             "Select_IP_Strings": {
                 "runAfter": {
-                    "Filter_Array_-_Get_Only_IPs": [
+                    "Entities_-_Get_IPs": [
                         "Succeeded"
                     ]
                 },
                 "type": "Select",
                 "inputs": {
-                    "from": "@body('Filter_Array_-_Get_Only_IPs')",
-                    "select": "@item()['properties']['address']"
+                    "from": "@body('Entities_-_Get_IPs')?['IPs']",
+                    "select": "@item()?['Address']"
                 },
-                "description": "Extracts the IP Address string from the entity object"
+                "description": "Extracts just the IP Address string"
             },
             "Compose_-_Deduplicate_IPs": {
                 "runAfter": {
@@ -90,7 +82,7 @@
                 },
                 "type": "Compose",
                 "inputs": "@union(body('Select_IP_Strings'), body('Select_IP_Strings'))",
-                "description": "Removes duplicates"
+                "description": "Removes duplicates by unioning the array with itself"
             },
             "Filter_Array_-_Public_IPs_Only": {
                 "runAfter": {
