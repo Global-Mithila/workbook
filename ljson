@@ -82,7 +82,7 @@
                         "Succeeded"
                     ]
                 },
-                "type": "Query",
+                "type": "Select",
                 "inputs": {
                     "from": "@body('Entities_-_Get_IPs')?['IPs']",
                     "select": "@item()?['Address']"
