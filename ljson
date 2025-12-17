@@ -38,7 +38,7 @@
                     ]
                 }
             },
-            "Get_VT_Key_from_KeyVault": {
+            "Entities_-_Get_IPs": {
                 "runAfter": {
                     "Initialize_MaliciousFindings_Array": [
                         "Succeeded"
@@ -46,26 +46,8 @@
                 },
                 "type": "ApiConnection",
                 "inputs": {
-                    "host": {
-                        "connection": {
-                            "name": "@parameters('$connections')['keyvault']['connectionId']"
-                        }
-                    },
-                    "method": "get",
-                    "path": "/secrets/@{encodeURIComponent('VirusTotalApiKey')}/value"
-                },
-                "description": "Ensure your secret name is 'VirusTotalApiKey' or update this step."
-            },
-            "Entities_-_Get_IPs": {
-                "runAfter": {
-                    "Get_VT_Key_from_KeyVault": [
-                        "Succeeded"
-                    ]
-                },
-                "type": "ApiConnection",
-                "inputs": {
                     "body": {
-                        "entities": "@triggerBody()?['object']?['properties']?['relatedEntities']"
+                        "entities": "@triggerBody()['object']['properties']['relatedEntities']"
                     },
                     "host": {
                         "connection": {
@@ -84,8 +66,8 @@
                 },
                 "type": "Select",
                 "inputs": {
-                    "from": "@body('Entities_-_Get_IPs')?['IPs']",
-                    "select": "@item()?['Address']"
+                    "from": "@body('Entities_-_Get_IPs')['IPs']",
+                    "select": "@item()['Address']"
                 },
                 "description": "Converts Object List to String List for easier processing"
             },
@@ -133,7 +115,7 @@
                             "method": "GET",
                             "uri": "https://www.virustotal.com/api/v3/ip_addresses/@{item()}",
                             "headers": {
-                                "x-apikey": "@body('Get_VT_Key_from_KeyVault')?['value']"
+                                "x-apikey": "PUT_YOUR_VT_API_KEY_HERE"
                             }
                         }
                     },
@@ -188,8 +170,8 @@
                                     "name": "var_MaliciousFindings",
                                     "value": {
                                         "Entity": "@{item()}",
-                                        "Malicious_Score": "@{body('Parse_JSON_-_VT_Response')?['data']?['attributes']?['last_analysis_stats']?['malicious']}",
-                                        "Suspicious_Score": "@{body('Parse_JSON_-_VT_Response')?['data']?['attributes']?['last_analysis_stats']?['suspicious']}",
+                                        "Malicious_Score": "@{body('Parse_JSON_-_VT_Response')['data']['attributes']['last_analysis_stats']['malicious']}",
+                                        "Suspicious_Score": "@{body('Parse_JSON_-_VT_Response')['data']['attributes']['last_analysis_stats']['suspicious']}",
                                         "VT_Link": "https://www.virustotal.com/gui/ip-address/@{item()}"
                                     }
                                 }
@@ -199,7 +181,7 @@
                             "and": [
                                 {
                                     "greater": [
-                                        "@body('Parse_JSON_-_VT_Response')?['data']?['attributes']?['last_analysis_stats']?['malicious']",
+                                        "@body('Parse_JSON_-_VT_Response')['data']['attributes']['last_analysis_stats']['malicious']",
                                         0
                                     ]
                                 }
@@ -209,7 +191,7 @@
                     }
                 }
             },
-            "Condition_-_Any_Malicious_Found?": {
+            "Condition_-_Any_Malicious_Found": {
                 "runAfter": {
                     "For_each_Public_IP": [
                         "Succeeded"
@@ -253,7 +235,7 @@
                                         }
                                     },
                                     "method": "post",
-                                    "path": "/incidents/@{encodeURIComponent(triggerBody()?['object']?['id'])}/comments"
+                                    "path": "/incidents/@{encodeURIComponent(triggerBody()['object']['id'])}/comments"
                                 }
                             }
                         },
@@ -272,7 +254,7 @@
                                             }
                                         },
                                         "method": "post",
-                                        "path": "/incidents/@{encodeURIComponent(triggerBody()?['object']?['id'])}/comments"
+                                        "path": "/incidents/@{encodeURIComponent(triggerBody()['object']['id'])}/comments"
                                     }
                                 }
                             }
@@ -305,7 +287,7 @@
                                     }
                                 },
                                 "method": "post",
-                                "path": "/incidents/@{encodeURIComponent(triggerBody()?['object']?['id'])}/comments"
+                                "path": "/incidents/@{encodeURIComponent(triggerBody()['object']['id'])}/comments"
                             }
                         }
                     }
