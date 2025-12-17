@@ -1,0 +1,327 @@
+{
+    "definition": {
+        "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+        "contentVersion": "1.0.0.0",
+        "parameters": {
+            "$connections": {
+                "defaultValue": {},
+                "type": "Object"
+            }
+        },
+        "triggers": {
+            "Microsoft_Sentinel_incident": {
+                "type": "ApiConnectionWebhook",
+                "inputs": {
+                    "body": {
+                        "callback_url": "@{listCallbackUrl()}"
+                    },
+                    "host": {
+                        "connection": {
+                            "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                        }
+                    },
+                    "path": "/incident-creation"
+                }
+            }
+        },
+        "actions": {
+            "Initialize_MaliciousFindings_Array": {
+                "runAfter": {},
+                "type": "InitializeVariable",
+                "inputs": {
+                    "variables": [
+                        {
+                            "name": "var_MaliciousFindings",
+                            "type": "Array",
+                            "value": []
+                        }
+                    ]
+                }
+            },
+            "Get_VT_Key_from_KeyVault": {
+                "runAfter": {
+                    "Initialize_MaliciousFindings_Array": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "ApiConnection",
+                "inputs": {
+                    "host": {
+                        "connection": {
+                            "name": "@parameters('$connections')['keyvault']['connectionId']"
+                        }
+                    },
+                    "method": "get",
+                    "path": "/secrets/@{encodeURIComponent('VirusTotalApiKey')}/value"
+                },
+                "description": "Ensure your secret name is 'VirusTotalApiKey' or update this step."
+            },
+            "Entities_-_Get_IPs": {
+                "runAfter": {
+                    "Get_VT_Key_from_KeyVault": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "ApiConnection",
+                "inputs": {
+                    "body": {
+                        "entities": "@triggerBody()?['object']?['properties']?['relatedEntities']"
+                    },
+                    "host": {
+                        "connection": {
+                            "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                        }
+                    },
+                    "method": "post",
+                    "path": "/entities/ip"
+                }
+            },
+            "Select_IP_Strings": {
+                "runAfter": {
+                    "Entities_-_Get_IPs": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "Query",
+                "inputs": {
+                    "from": "@body('Entities_-_Get_IPs')?['IPs']",
+                    "select": "@item()?['Address']"
+                },
+                "description": "Converts Object List to String List for easier processing"
+            },
+            "Compose_-_Deduplicate_IPs": {
+                "runAfter": {
+                    "Select_IP_Strings": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "Compose",
+                "inputs": "@union(body('Select_IP_Strings'), body('Select_IP_Strings'))",
+                "description": "Removes duplicates by unioning the array with itself"
+            },
+            "Filter_Array_-_Public_IPs_Only": {
+                "runAfter": {
+                    "Compose_-_Deduplicate_IPs": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "Query",
+                "inputs": {
+                    "from": "@outputs('Compose_-_Deduplicate_IPs')",
+                    "where": "@and(not(startswith(item(), '10.')), not(startswith(item(), '192.168.')), not(startswith(item(), '127.')), not(equals(item(), '::1')), not(startswith(item(), '172.16.')), not(startswith(item(), '172.17.')), not(startswith(item(), '172.18.')), not(startswith(item(), '172.19.')), not(startswith(item(), '172.20.')), not(startswith(item(), '172.21.')), not(startswith(item(), '172.22.')), not(startswith(item(), '172.23.')), not(startswith(item(), '172.24.')), not(startswith(item(), '172.25.')), not(startswith(item(), '172.26.')), not(startswith(item(), '172.27.')), not(startswith(item(), '172.28.')), not(startswith(item(), '172.29.')), not(startswith(item(), '172.30.')), not(startswith(item(), '172.31.')))"
+                },
+                "description": "Filters out RFC1918 Private Ranges and Loopbacks"
+            },
+            "For_each_Public_IP": {
+                "runAfter": {
+                    "Filter_Array_-_Public_IPs_Only": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "Foreach",
+                "foreach": "@body('Filter_Array_-_Public_IPs_Only')",
+                "runtimeConfiguration": {
+                    "concurrency": {
+                        "repetitions": 20
+                    }
+                },
+                "actions": {
+                    "HTTP_-_Get_VT_Report": {
+                        "runAfter": {},
+                        "type": "Http",
+                        "inputs": {
+                            "method": "GET",
+                            "uri": "https://www.virustotal.com/api/v3/ip_addresses/@{item()}",
+                            "headers": {
+                                "x-apikey": "@body('Get_VT_Key_from_KeyVault')?['value']"
+                            }
+                        }
+                    },
+                    "Parse_JSON_-_VT_Response": {
+                        "runAfter": {
+                            "HTTP_-_Get_VT_Report": [
+                                "Succeeded"
+                            ]
+                        },
+                        "type": "ParseJson",
+                        "inputs": {
+                            "content": "@body('HTTP_-_Get_VT_Report')",
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "data": {
+                                        "type": "object",
+                                        "properties": {
+                                            "attributes": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "last_analysis_stats": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "malicious": {
+                                                                "type": "integer"
+                                                            },
+                                                            "suspicious": {
+                                                                "type": "integer"
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "Condition_-_Is_Malicious": {
+                        "runAfter": {
+                            "Parse_JSON_-_VT_Response": [
+                                "Succeeded"
+                            ]
+                        },
+                        "actions": {
+                            "Append_to_MaliciousFindings": {
+                                "runAfter": {},
+                                "type": "AppendToArrayVariable",
+                                "inputs": {
+                                    "name": "var_MaliciousFindings",
+                                    "value": {
+                                        "Entity": "@{item()}",
+                                        "Malicious_Score": "@{body('Parse_JSON_-_VT_Response')?['data']?['attributes']?['last_analysis_stats']?['malicious']}",
+                                        "Suspicious_Score": "@{body('Parse_JSON_-_VT_Response')?['data']?['attributes']?['last_analysis_stats']?['suspicious']}",
+                                        "VT_Link": "https://www.virustotal.com/gui/ip-address/@{item()}"
+                                    }
+                                }
+                            }
+                        },
+                        "expression": {
+                            "and": [
+                                {
+                                    "greater": [
+                                        "@body('Parse_JSON_-_VT_Response')?['data']?['attributes']?['last_analysis_stats']?['malicious']",
+                                        0
+                                    ]
+                                }
+                            ]
+                        },
+                        "type": "If"
+                    }
+                }
+            },
+            "Condition_-_Any_Malicious_Found?": {
+                "runAfter": {
+                    "For_each_Public_IP": [
+                        "Succeeded"
+                    ]
+                },
+                "actions": {
+                    "Create_HTML_table": {
+                        "runAfter": {},
+                        "type": "Table",
+                        "inputs": {
+                            "from": "@variables('var_MaliciousFindings')",
+                            "format": "HTML"
+                        }
+                    },
+                    "Compose_-_Format_Table_CSS": {
+                        "runAfter": {
+                            "Create_HTML_table": [
+                                "Succeeded"
+                            ]
+                        },
+                        "type": "Compose",
+                        "inputs": "<style>\n table {border-collapse: collapse; width: 100%; font-family: Segoe UI, sans-serif;}\n th {background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; padding: 8px; text-align: left;}\n td {border: 1px solid #ddd; padding: 8px;}\n tr:nth-child(even){background-color: #f2f2f2;}\n</style>\n<h3>🚨 Threat Intelligence Matches</h3>\n<p><b>Scan Summary:</b> Scanned <b>@{length(body('Filter_Array_-_Public_IPs_Only'))}</b> unique public IPs. Found <b>@{length(variables('var_MaliciousFindings'))}</b> malicious entities.</p>\n<br>\n@{body('Create_HTML_table')}"
+                    },
+                    "Condition_-_Check_Size_Limit": {
+                        "runAfter": {
+                            "Compose_-_Format_Table_CSS": [
+                                "Succeeded"
+                            ]
+                        },
+                        "actions": {
+                            "Add_comment_-_Too_Large": {
+                                "runAfter": {},
+                                "type": "ApiConnection",
+                                "inputs": {
+                                    "body": {
+                                        "message": "⚠️ **High Volume Warning**\n\nScanner found @{length(variables('var_MaliciousFindings'))} malicious IPs, but the report exceeds the 30,000 character limit for incident comments.\n\nPlease check the Logic App run history for full details."
+                                    },
+                                    "host": {
+                                        "connection": {
+                                            "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                                        }
+                                    },
+                                    "method": "post",
+                                    "path": "/incidents/@{encodeURIComponent(triggerBody()?['object']?['id'])}/comments"
+                                }
+                            }
+                        },
+                        "else": {
+                            "actions": {
+                                "Add_comment_-_Malicious_Table": {
+                                    "runAfter": {},
+                                    "type": "ApiConnection",
+                                    "inputs": {
+                                        "body": {
+                                            "message": "@outputs('Compose_-_Format_Table_CSS')"
+                                        },
+                                        "host": {
+                                            "connection": {
+                                                "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                                            }
+                                        },
+                                        "method": "post",
+                                        "path": "/incidents/@{encodeURIComponent(triggerBody()?['object']?['id'])}/comments"
+                                    }
+                                }
+                            }
+                        },
+                        "expression": {
+                            "and": [
+                                {
+                                    "greater": [
+                                        "@length(outputs('Compose_-_Format_Table_CSS'))",
+                                        28000
+                                    ]
+                                }
+                            ]
+                        },
+                        "type": "If"
+                    }
+                },
+                "else": {
+                    "actions": {
+                        "Add_comment_-_Clean_Summary": {
+                            "runAfter": {},
+                            "type": "ApiConnection",
+                            "inputs": {
+                                "body": {
+                                    "message": "✅ **Scan Complete**\n\nAnalyzed @{length(body('Filter_Array_-_Public_IPs_Only'))} unique public IPs. No malicious reputation detected on VirusTotal."
+                                },
+                                "host": {
+                                    "connection": {
+                                        "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                                    }
+                                },
+                                "method": "post",
+                                "path": "/incidents/@{encodeURIComponent(triggerBody()?['object']?['id'])}/comments"
+                            }
+                        }
+                    }
+                },
+                "expression": {
+                    "and": [
+                        {
+                            "greater": [
+                                "@length(variables('var_MaliciousFindings'))",
+                                0
+                            ]
+                        }
+                    ]
+                },
+                "type": "If"
+            }
+        }
+    }
+}
