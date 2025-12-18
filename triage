@@ -38,150 +38,161 @@
                     ]
                 }
             },
-            "Parallel_Processing_Branches": {
+            "Entities_-_Get_IPs": {
                 "runAfter": {
                     "Initialize_MaliciousIPs": [
                         "Succeeded"
                     ]
                 },
-                "type": "SplitOn",
-                "branches": {
-                    "Branch_1_-_IP_Enrichment": {
-                        "actions": {
-                            "Entities_-_Get_IPs": {
-                                "type": "ApiConnection",
-                                "inputs": {
-                                    "body": {
-                                        "entities": "@triggerBody()?['object']?['properties']?['relatedEntities']"
-                                    },
-                                    "headers": {
-                                        "Content-Type": "application/json"
-                                    },
-                                    "host": {
-                                        "connection": {
-                                            "name": "@parameters('$connections')['azuresentinel']['connectionId']"
-                                        }
-                                    },
-                                    "method": "post",
-                                    "path": "/entities/ip"
-                                }
-                            },
-                            "Select_IP_Strings": {
-                                "runAfter": {
-                                    "Entities_-_Get_IPs": [
-                                        "Succeeded"
-                                    ]
-                                },
-                                "type": "Select",
-                                "inputs": {
-                                    "from": "@body('Entities_-_Get_IPs')?['IPs']",
-                                    "select": "@item()?['Address']"
-                                },
-                                "description": "Extract IP strings"
-                            },
-                            "Compose_Unique_IPs": {
-                                "runAfter": {
-                                    "Select_IP_Strings": [
-                                        "Succeeded"
-                                    ]
-                                },
-                                "type": "Compose",
-                                "inputs": "@union(body('Select_IP_Strings'), body('Select_IP_Strings'))"
-                            },
-                            "Filter_Public_IPs": {
-                                "runAfter": {
-                                    "Compose_Unique_IPs": [
-                                        "Succeeded"
-                                    ]
-                                },
-                                "type": "Query",
-                                "inputs": {
-                                    "from": "@outputs('Compose_Unique_IPs')",
-                                    "where": "@and(not(startswith(item(), '10.')), not(startswith(item(), '192.168.')), not(startswith(item(), '127.')), not(startswith(item(), '172.16.')))"
-                                }
-                            },
-                            "For_each_Public_IP": {
-                                "runAfter": {
-                                    "Filter_Public_IPs": [
-                                        "Succeeded"
-                                    ]
-                                },
-                                "type": "Foreach",
-                                "foreach": "@body('Filter_Public_IPs')",
-                                "actions": {
-                                    "HTTP_VT_Scan": {
-                                        "type": "Http",
-                                        "inputs": {
-                                            "method": "GET",
-                                            "uri": "https://www.virustotal.com/api/v3/ip_addresses/@{item()}",
-                                            "headers": {
-                                                "x-apikey": "PUT_YOUR_VT_API_KEY_HERE"
-                                            }
-                                        }
-                                    },
-                                    "Parse_VT_JSON": {
-                                        "runAfter": {
-                                            "HTTP_VT_Scan": [
-                                                "Succeeded"
-                                            ]
-                                        },
-                                        "type": "ParseJson",
-                                        "inputs": {
-                                            "content": "@body('HTTP_VT_Scan')",
-                                            "schema": {
+                "type": "ApiConnection",
+                "inputs": {
+                    "body": {
+                        "entities": "@triggerBody()?['object']?['properties']?['relatedEntities']"
+                    },
+                    "headers": {
+                        "Content-Type": "application/json"
+                    },
+                    "host": {
+                        "connection": {
+                            "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                        }
+                    },
+                    "method": "post",
+                    "path": "/entities/ip"
+                }
+            },
+            "Entities_-_Get_Accounts": {
+                "runAfter": {
+                    "Initialize_MaliciousIPs": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "ApiConnection",
+                "inputs": {
+                    "body": {
+                        "entities": "@triggerBody()?['object']?['properties']?['relatedEntities']"
+                    },
+                    "headers": {
+                        "Content-Type": "application/json"
+                    },
+                    "host": {
+                        "connection": {
+                            "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                        }
+                    },
+                    "method": "post",
+                    "path": "/entities/account"
+                }
+            },
+            "Entities_-_Get_Hosts": {
+                "runAfter": {
+                    "Initialize_MaliciousIPs": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "ApiConnection",
+                "inputs": {
+                    "body": {
+                        "entities": "@triggerBody()?['object']?['properties']?['relatedEntities']"
+                    },
+                    "headers": {
+                        "Content-Type": "application/json"
+                    },
+                    "host": {
+                        "connection": {
+                            "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                        }
+                    },
+                    "method": "post",
+                    "path": "/entities/host"
+                }
+            },
+            "Select_IP_Strings": {
+                "runAfter": {
+                    "Entities_-_Get_IPs": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "Select",
+                "inputs": {
+                    "from": "@body('Entities_-_Get_IPs')?['IPs']",
+                    "select": "@item()?['Address']"
+                }
+            },
+            "Compose_Unique_IPs": {
+                "runAfter": {
+                    "Select_IP_Strings": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "Compose",
+                "inputs": "@union(body('Select_IP_Strings'), body('Select_IP_Strings'))"
+            },
+            "Filter_Public_IPs": {
+                "runAfter": {
+                    "Compose_Unique_IPs": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "Query",
+                "inputs": {
+                    "from": "@outputs('Compose_Unique_IPs')",
+                    "where": "@and(not(startswith(item(), '10.')), not(startswith(item(), '192.168.')), not(startswith(item(), '127.')), not(startswith(item(), '172.16.')), not(startswith(item(), '172.17.')), not(startswith(item(), '172.18.')), not(startswith(item(), '172.19.')), not(startswith(item(), '172.20.')), not(startswith(item(), '172.21.')), not(startswith(item(), '172.22.')), not(startswith(item(), '172.23.')), not(startswith(item(), '172.24.')), not(startswith(item(), '172.25.')), not(startswith(item(), '172.26.')), not(startswith(item(), '172.27.')), not(startswith(item(), '172.28.')), not(startswith(item(), '172.29.')), not(startswith(item(), '172.30.')), not(startswith(item(), '172.31.')))"
+                }
+            },
+            "For_each_Public_IP": {
+                "runAfter": {
+                    "Filter_Public_IPs": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "Foreach",
+                "foreach": "@body('Filter_Public_IPs')",
+                "runtimeConfiguration": {
+                    "concurrency": {
+                        "repetitions": 20
+                    }
+                },
+                "actions": {
+                    "HTTP_VT_Scan": {
+                        "runAfter": {},
+                        "type": "Http",
+                        "inputs": {
+                            "method": "GET",
+                            "uri": "https://www.virustotal.com/api/v3/ip_addresses/@{item()}",
+                            "headers": {
+                                "x-apikey": "PUT_YOUR_VT_API_KEY_HERE"
+                            }
+                        }
+                    },
+                    "Parse_VT_JSON": {
+                        "runAfter": {
+                            "HTTP_VT_Scan": [
+                                "Succeeded"
+                            ]
+                        },
+                        "type": "ParseJson",
+                        "inputs": {
+                            "content": "@body('HTTP_VT_Scan')",
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "data": {
+                                        "type": "object",
+                                        "properties": {
+                                            "attributes": {
                                                 "type": "object",
                                                 "properties": {
-                                                    "data": {
+                                                    "last_analysis_stats": {
                                                         "type": "object",
                                                         "properties": {
-                                                            "attributes": {
-                                                                "type": "object",
-                                                                "properties": {
-                                                                    "last_analysis_stats": {
-                                                                        "type": "object",
-                                                                        "properties": {
-                                                                            "malicious": {
-                                                                                "type": "integer"
-                                                                            }
-                                                                        }
-                                                                    },
-                                                                    "country": {
-                                                                        "type": "string"
-                                                                    }
-                                                                }
+                                                            "malicious": {
+                                                                "type": "integer"
                                                             }
                                                         }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    },
-                                    "Condition_Is_Malicious": {
-                                        "runAfter": {
-                                            "Parse_VT_JSON": [
-                                                "Succeeded"
-                                            ]
-                                        },
-                                        "type": "If",
-                                        "expression": {
-                                            "and": [
-                                                {
-                                                    "greater": [
-                                                        "@body('Parse_VT_JSON')['data']['attributes']['last_analysis_stats']['malicious']",
-                                                        0
-                                                    ]
-                                                }
-                                            ]
-                                        },
-                                        "actions": {
-                                            "Append_Malicious_IP": {
-                                                "type": "AppendToArrayVariable",
-                                                "inputs": {
-                                                    "name": "var_MaliciousIPs",
-                                                    "value": {
-                                                        "IP": "@{item()}",
-                                                        "Country": "@{body('Parse_VT_JSON')['data']['attributes']['country']}",
-                                                        "Malicious_Score": "@{body('Parse_VT_JSON')['data']['attributes']['last_analysis_stats']['malicious']}"
+                                                    },
+                                                    "country": {
+                                                        "type": "string"
                                                     }
                                                 }
                                             }
@@ -191,76 +202,33 @@
                             }
                         }
                     },
-                    "Branch_2_-_User_Context": {
-                        "actions": {
-                            "Entities_-_Get_Accounts": {
-                                "type": "ApiConnection",
-                                "inputs": {
-                                    "body": {
-                                        "entities": "@triggerBody()?['object']?['properties']?['relatedEntities']"
-                                    },
-                                    "headers": {
-                                        "Content-Type": "application/json"
-                                    },
-                                    "host": {
-                                        "connection": {
-                                            "name": "@parameters('$connections')['azuresentinel']['connectionId']"
-                                        }
-                                    },
-                                    "method": "post",
-                                    "path": "/entities/account"
-                                }
-                            },
-                            "Select_User_Details": {
-                                "runAfter": {
-                                    "Entities_-_Get_Accounts": [
-                                        "Succeeded"
+                    "Condition_Is_Malicious": {
+                        "runAfter": {
+                            "Parse_VT_JSON": [
+                                "Succeeded"
+                            ]
+                        },
+                        "type": "If",
+                        "expression": {
+                            "and": [
+                                {
+                                    "greater": [
+                                        "@body('Parse_VT_JSON')['data']['attributes']['last_analysis_stats']['malicious']",
+                                        0
                                     ]
-                                },
-                                "type": "Select",
-                                "inputs": {
-                                    "from": "@body('Entities_-_Get_Accounts')?['Accounts']",
-                                    "select": {
-                                        "User": "@item()?['Name']",
-                                        "UPN_Suffix": "@item()?['UPNSuffix']",
-                                        "Full_ID": "@{item()?['Name']}@{if(empty(item()?['UPNSuffix']), '', concat('@', item()?['UPNSuffix']))}"
-                                    }
                                 }
-                            }
-                        }
-                    },
-                    "Branch_3_-_Host_Context": {
+                            ]
+                        },
                         "actions": {
-                            "Entities_-_Get_Hosts": {
-                                "type": "ApiConnection",
+                            "Append_Malicious_IP": {
+                                "runAfter": {},
+                                "type": "AppendToArrayVariable",
                                 "inputs": {
-                                    "body": {
-                                        "entities": "@triggerBody()?['object']?['properties']?['relatedEntities']"
-                                    },
-                                    "headers": {
-                                        "Content-Type": "application/json"
-                                    },
-                                    "host": {
-                                        "connection": {
-                                            "name": "@parameters('$connections')['azuresentinel']['connectionId']"
-                                        }
-                                    },
-                                    "method": "post",
-                                    "path": "/entities/host"
-                                }
-                            },
-                            "Select_Host_Details": {
-                                "runAfter": {
-                                    "Entities_-_Get_Hosts": [
-                                        "Succeeded"
-                                    ]
-                                },
-                                "type": "Select",
-                                "inputs": {
-                                    "from": "@body('Entities_-_Get_Hosts')?['Hosts']",
-                                    "select": {
-                                        "Hostname": "@item()?['HostName']",
-                                        "OS": "@item()?['OSFamily']"
+                                    "name": "var_MaliciousIPs",
+                                    "value": {
+                                        "IP": "@{item()}",
+                                        "Country": "@{body('Parse_VT_JSON')['data']['attributes']['country']}",
+                                        "Malicious_Score": "@{body('Parse_VT_JSON')['data']['attributes']['last_analysis_stats']['malicious']}"
                                     }
                                 }
                             }
@@ -268,9 +236,46 @@
                     }
                 }
             },
+            "Select_User_Details": {
+                "runAfter": {
+                    "Entities_-_Get_Accounts": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "Select",
+                "inputs": {
+                    "from": "@body('Entities_-_Get_Accounts')?['Accounts']",
+                    "select": {
+                        "User": "@item()?['Name']",
+                        "UPN_Suffix": "@item()?['UPNSuffix']",
+                        "Full_ID": "@{item()?['Name']}@{if(empty(item()?['UPNSuffix']), '', concat('@', item()?['UPNSuffix']))}"
+                    }
+                }
+            },
+            "Select_Host_Details": {
+                "runAfter": {
+                    "Entities_-_Get_Hosts": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "Select",
+                "inputs": {
+                    "from": "@body('Entities_-_Get_Hosts')?['Hosts']",
+                    "select": {
+                        "Hostname": "@item()?['HostName']",
+                        "OS": "@item()?['OSFamily']"
+                    }
+                }
+            },
             "Condition_-_Generate_Report": {
                 "runAfter": {
-                    "Parallel_Processing_Branches": [
+                    "For_each_Public_IP": [
+                        "Succeeded"
+                    ],
+                    "Select_User_Details": [
+                        "Succeeded"
+                    ],
+                    "Select_Host_Details": [
                         "Succeeded"
                     ]
                 },
@@ -293,6 +298,7 @@
                 },
                 "actions": {
                     "Create_HTML_Table_Users": {
+                        "runAfter": {},
                         "type": "Table",
                         "inputs": {
                             "from": "@body('Select_User_Details')",
@@ -355,6 +361,7 @@
                         },
                         "actions": {
                             "Add_task_to_incident_-_Block_IPs": {
+                                "runAfter": {},
                                 "type": "ApiConnection",
                                 "inputs": {
                                     "body": {
