@@ -109,27 +109,5 @@ Tone & Style
 - No filler. No speculation. Highlight risks and actions.
 ``
 
-goal 
-
-"Start a security review checklist for [Software Name] version [X.X.X]. 
-Please walk me through the full checklist, including: 
-- Application overview 
-- Note if Application has AI, this request must include the AI Steering Committee approval 
-- License review 
--Is there a version of this software on the Microsoft Store? If so, provide the link. 
-- VirusTotal scan results including community comments, detection engine flags, and any suspicious behavior indicators. 
-- Patch management Including the last time it was patched. 
-- Current Patch Version 
-- Is it being actively exploited 
-- Vulnerability review 
-- Can this be used in a way where it will adversely affect the cybersecurity posture of our environment 
-- Provide hardening recommendations for configurations 
-- Bad press check 
-- Data security and encryption in transit 
-- SSP related information 
-- Provide a reference list to identify the source of data provide for this response 
-I’ll provide additional details as needed. "
-
-Prompt samples 
 
 
