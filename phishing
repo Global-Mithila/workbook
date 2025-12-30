@@ -21,7 +21,7 @@
                         "runAfter": {},
                         "type": "ApiConnection"
                     },
-                    "Condition_-_Clicks_Found?": {
+                    "Condition_Clicks_Found": {
                         "actions": {
                             "Update_Incident_-_High_Severity": {
                                 "inputs": {
@@ -138,90 +138,4 @@
                         },
                         "expression": {
                             "greater": [
-                                "@length(body('Run_KQL_-_Check_for_Clicks')?['value'])",
-                                0
-                            ]
-                        },
-                        "runAfter": {
-                            "Run_KQL_-_Check_for_Clicks": [
-                                "Succeeded"
-                            ]
-                        },
-                        "type": "If"
-                    }
-                },
-                "expression": {
-                    "or": [
-                        {
-                            "contains": [
-                                "@triggerBody()?['object']?['properties']?['title']",
-                                "Phish"
-                            ]
-                        },
-                        {
-                            "contains": [
-                                "@triggerBody()?['object']?['properties']?['description']",
-                                "Phish"
-                            ]
-                        }
-                    ]
-                },
-                "runAfter": {},
-                "type": "If"
-            }
-        },
-        "contentVersion": "1.0.0.0",
-        "outputs": {},
-        "parameters": {
-            "$connections": {
-                "defaultValue": {},
-                "type": "Object"
-            },
-            "SubscriptionID": {
-                "defaultValue": "YOUR_SUBSCRIPTION_ID_HERE",
-                "type": "String"
-            },
-            "ResourceGroup": {
-                "defaultValue": "YOUR_RESOURCE_GROUP_HERE",
-                "type": "String"
-            },
-            "WorkspaceName": {
-                "defaultValue": "YOUR_WORKSPACE_NAME_HERE",
-                "type": "String"
-            }
-        },
-        "triggers": {
-            "Microsoft_Sentinel_incident": {
-                "inputs": {
-                    "host": {
-                        "connection": {
-                            "name": "@parameters('$connections')['azuresentinel']['connectionId']"
-                        }
-                    },
-                    "path": "/incident-creation"
-                },
-                "recurrence": {
-                    "frequency": "Minute",
-                    "interval": 5
-                },
-                "type": "ApiConnection"
-            }
-        }
-    },
-    "parameters": {
-        "$connections": {
-            "value": {
-                "azuresentinel": {
-                    "connectionId": "/subscriptions/{subscriptionId}/resourceGroups/{resourceGroup}/providers/Microsoft.Web/connections/azuresentinel",
-                    "connectionName": "azuresentinel",
-                    "id": "/subscriptions/{subscriptionId}/providers/Microsoft.Web/locations/{location}/managedApis/azuresentinel"
-                },
-                "azuremonitorlogs": {
-                    "connectionId": "/subscriptions/{subscriptionId}/resourceGroups/{resourceGroup}/providers/Microsoft.Web/connections/azuremonitorlogs",
-                    "connectionName": "azuremonitorlogs",
-                    "id": "/subscriptions/{subscriptionId}/providers/Microsoft.Web/locations/{location}/managedApis/azuremonitorlogs"
-                }
-            }
-        }
-    }
-}
+                                "@length(
