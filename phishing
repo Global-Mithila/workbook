@@ -9,11 +9,26 @@
                             "name": "Checklist",
                             "type": "Array",
                             "value": [
-                                { "Title": "1. Analyze Headers", "Description": "Check SPF/DKIM/DMARC." },
-                                { "Title": "2. Scope Attack", "Description": "Find other recipients." },
-                                { "Title": "3. Verify Interaction", "Description": "Check for clicks/downloads." },
-                                { "Title": "4. Check Forwarding", "Description": "Look for New-InboxRule." },
-                                { "Title": "5. Remediation", "Description": "Block Sender & Reset Passwords." }
+                                {
+                                    "Description": "Check SPF/DKIM/DMARC.",
+                                    "Title": "1. Analyze Headers"
+                                },
+                                {
+                                    "Description": "Find other recipients.",
+                                    "Title": "2. Scope Attack"
+                                },
+                                {
+                                    "Description": "Check for clicks/downloads.",
+                                    "Title": "3. Verify Interaction"
+                                },
+                                {
+                                    "Description": "Look for New-InboxRule.",
+                                    "Title": "4. Check Forwarding"
+                                },
+                                {
+                                    "Description": "Block Sender & Reset Passwords.",
+                                    "Title": "5. Remediation"
+                                }
                             ]
                         }
                     ]
@@ -35,31 +50,13 @@
                                 }
                             },
                             "method": "post",
-                            "path": "/subscriptions/@{encodeURIComponent(parameters('SubscriptionID'))}/resourceGroups/@{encodeURIComponent(parameters('ResourceGroup'))}/providers/Microsoft.OperationalInsights/workspaces/@{encodeURIComponent(parameters('WorkspaceName'))}/api/query"
+                            "path": "/subscriptions/@{encodeURIComponent(subscription().subscriptionId)}/resourceGroups/@{encodeURIComponent(resourceGroup().name)}/providers/Microsoft.OperationalInsights/workspaces/@{encodeURIComponent(parameters('WorkspaceName'))}/api/query"
                         },
                         "runAfter": {},
                         "type": "ApiConnection"
                     },
                     "Condition_Clicks_Found": {
                         "actions": {
-                            "Update_Incident_-_High_Severity": {
-                                "inputs": {
-                                    "body": {
-                                        "severity": "High",
-                                        "status": "Active",
-                                        "title": "[CRITICAL] Users Clicked Malicious Link - @{triggerBody()?['object']?['properties']?['title']}"
-                                    },
-                                    "host": {
-                                        "connection": {
-                                            "name": "@parameters('$connections')['azuresentinel']['connectionId']"
-                                        }
-                                    },
-                                    "method": "put",
-                                    "path": "/Incidents/@{encodeURIComponent(triggerBody()?['object']?['name'])}"
-                                },
-                                "runAfter": {},
-                                "type": "ApiConnection"
-                            },
                             "Add_Comment_-_Critical_Alert": {
                                 "inputs": {
                                     "body": {
@@ -80,10 +77,49 @@
                                     ]
                                 },
                                 "type": "ApiConnection"
+                            },
+                            "Update_Incident_-_High_Severity": {
+                                "inputs": {
+                                    "body": {
+                                        "severity": "High",
+                                        "status": "Active",
+                                        "title": "[CRITICAL] Users Clicked Malicious Link - @{triggerBody()?['object']?['properties']?['title']}"
+                                    },
+                                    "host": {
+                                        "connection": {
+                                            "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                                        }
+                                    },
+                                    "method": "put",
+                                    "path": "/Incidents/@{encodeURIComponent(triggerBody()?['object']?['name'])}"
+                                },
+                                "runAfter": {},
+                                "type": "ApiConnection"
                             }
                         },
                         "else": {
                             "actions": {
+                                "Add_KQL_Cheat_Sheet": {
+                                    "inputs": {
+                                        "body": {
+                                            "incidentArmId": "@triggerBody()?['object']?['id']",
+                                            "message": "<h3>Phishing KQL Cheat Sheet</h3><p>Copy these into Advanced Hunting:</p><strong>1. Scope Impact</strong><pre>EmailEvents | where Subject == \"@{triggerBody()?['object']?['properties']?['title']}\"</pre><strong>2. Suspicious Forwarding</strong><pre>CloudAppEvents | where ActionType has \"InboxRule\"</pre>"
+                                        },
+                                        "host": {
+                                            "connection": {
+                                                "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                                            }
+                                        },
+                                        "method": "post",
+                                        "path": "/Incidents/Comment"
+                                    },
+                                    "runAfter": {
+                                        "For_each_Checklist_Item": [
+                                            "Succeeded"
+                                        ]
+                                    },
+                                    "type": "ApiConnection"
+                                },
                                 "For_each_Checklist_Item": {
                                     "actions": {
                                         "Add_Task_to_Incident": {
@@ -108,27 +144,6 @@
                                     "foreach": "@variables('Checklist')",
                                     "runAfter": {},
                                     "type": "Foreach"
-                                },
-                                "Add_KQL_Cheat_Sheet": {
-                                    "inputs": {
-                                        "body": {
-                                            "incidentArmId": "@triggerBody()?['object']?['id']",
-                                            "message": "<h3>Phishing KQL Cheat Sheet</h3><p>Copy these into Advanced Hunting:</p><strong>1. Scope Impact</strong><pre>EmailEvents | where Subject == \"@{triggerBody()?['object']?['properties']?['title']}\"</pre><strong>2. Suspicious Forwarding</strong><pre>CloudAppEvents | where ActionType has \"InboxRule\"</pre>"
-                                        },
-                                        "host": {
-                                            "connection": {
-                                                "name": "@parameters('$connections')['azuresentinel']['connectionId']"
-                                            }
-                                        },
-                                        "method": "post",
-                                        "path": "/Incidents/Comment"
-                                    },
-                                    "runAfter": {
-                                        "For_each_Checklist_Item": [
-                                            "Succeeded"
-                                        ]
-                                    },
-                                    "type": "ApiConnection"
                                 }
                             }
                         },
@@ -177,14 +192,6 @@
                 "defaultValue": {},
                 "type": "Object"
             },
-            "SubscriptionID": {
-                "defaultValue": "YOUR_SUBSCRIPTION_ID_HERE",
-                "type": "String"
-            },
-            "ResourceGroup": {
-                "defaultValue": "YOUR_RESOURCE_GROUP_HERE",
-                "type": "String"
-            },
             "WorkspaceName": {
                 "defaultValue": "YOUR_WORKSPACE_NAME_HERE",
                 "type": "String"
@@ -210,18 +217,7 @@
     },
     "parameters": {
         "$connections": {
-            "value": {
-                "azuresentinel": {
-                    "connectionId": "/subscriptions/{subscriptionId}/resourceGroups/{resourceGroup}/providers/Microsoft.Web/connections/azuresentinel",
-                    "connectionName": "azuresentinel",
-                    "id": "/subscriptions/{subscriptionId}/providers/Microsoft.Web/locations/{location}/managedApis/azuresentinel"
-                },
-                "azuremonitorlogs": {
-                    "connectionId": "/subscriptions/{subscriptionId}/resourceGroups/{resourceGroup}/providers/Microsoft.Web/connections/azuremonitorlogs",
-                    "connectionName": "azuremonitorlogs",
-                    "id": "/subscriptions/{subscriptionId}/providers/Microsoft.Web/locations/{location}/managedApis/azuremonitorlogs"
-                }
-            }
+            "value": {}
         }
     }
 }
