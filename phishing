@@ -2,6 +2,25 @@
     "definition": {
         "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
         "actions": {
+            "Initialize_Checklist": {
+                "inputs": {
+                    "variables": [
+                        {
+                            "name": "Checklist",
+                            "type": "Array",
+                            "value": [
+                                { "Title": "1. Analyze Headers", "Description": "Check SPF/DKIM/DMARC." },
+                                { "Title": "2. Scope Attack", "Description": "Find other recipients." },
+                                { "Title": "3. Verify Interaction", "Description": "Check for clicks/downloads." },
+                                { "Title": "4. Check Forwarding", "Description": "Look for New-InboxRule." },
+                                { "Title": "5. Remediation", "Description": "Block Sender & Reset Passwords." }
+                            ]
+                        }
+                    ]
+                },
+                "runAfter": {},
+                "type": "InitializeVariable"
+            },
             "Condition_-_Is_Phishing": {
                 "actions": {
                     "Run_KQL_-_Check_for_Clicks": {
@@ -65,25 +84,6 @@
                         },
                         "else": {
                             "actions": {
-                                "Initialize_Checklist": {
-                                    "inputs": {
-                                        "variables": [
-                                            {
-                                                "name": "Checklist",
-                                                "type": "Array",
-                                                "value": [
-                                                    { "Title": "1. Analyze Headers", "Description": "Check SPF/DKIM/DMARC." },
-                                                    { "Title": "2. Scope Attack", "Description": "Find other recipients." },
-                                                    { "Title": "3. Verify Interaction", "Description": "Check for clicks/downloads." },
-                                                    { "Title": "4. Check Forwarding", "Description": "Look for New-InboxRule." },
-                                                    { "Title": "5. Remediation", "Description": "Block Sender & Reset Passwords." }
-                                                ]
-                                            }
-                                        ]
-                                    },
-                                    "runAfter": {},
-                                    "type": "InitializeVariable"
-                                },
                                 "For_each_Checklist_Item": {
                                     "actions": {
                                         "Add_Task_to_Incident": {
@@ -106,11 +106,7 @@
                                         }
                                     },
                                     "foreach": "@variables('Checklist')",
-                                    "runAfter": {
-                                        "Initialize_Checklist": [
-                                            "Succeeded"
-                                        ]
-                                    },
+                                    "runAfter": {},
                                     "type": "Foreach"
                                 },
                                 "Add_KQL_Cheat_Sheet": {
@@ -138,4 +134,94 @@
                         },
                         "expression": {
                             "greater": [
-                                "@length(
+                                "@length(body('Run_KQL_-_Check_for_Clicks')?['value'])",
+                                0
+                            ]
+                        },
+                        "runAfter": {
+                            "Run_KQL_-_Check_for_Clicks": [
+                                "Succeeded"
+                            ]
+                        },
+                        "type": "If"
+                    }
+                },
+                "expression": {
+                    "or": [
+                        {
+                            "contains": [
+                                "@triggerBody()?['object']?['properties']?['title']",
+                                "Phish"
+                            ]
+                        },
+                        {
+                            "contains": [
+                                "@triggerBody()?['object']?['properties']?['description']",
+                                "Phish"
+                            ]
+                        }
+                    ]
+                },
+                "runAfter": {
+                    "Initialize_Checklist": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "If"
+            }
+        },
+        "contentVersion": "1.0.0.0",
+        "outputs": {},
+        "parameters": {
+            "$connections": {
+                "defaultValue": {},
+                "type": "Object"
+            },
+            "SubscriptionID": {
+                "defaultValue": "YOUR_SUBSCRIPTION_ID_HERE",
+                "type": "String"
+            },
+            "ResourceGroup": {
+                "defaultValue": "YOUR_RESOURCE_GROUP_HERE",
+                "type": "String"
+            },
+            "WorkspaceName": {
+                "defaultValue": "YOUR_WORKSPACE_NAME_HERE",
+                "type": "String"
+            }
+        },
+        "triggers": {
+            "Microsoft_Sentinel_incident": {
+                "inputs": {
+                    "host": {
+                        "connection": {
+                            "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                        }
+                    },
+                    "path": "/incident-creation"
+                },
+                "recurrence": {
+                    "frequency": "Minute",
+                    "interval": 5
+                },
+                "type": "ApiConnection"
+            }
+        }
+    },
+    "parameters": {
+        "$connections": {
+            "value": {
+                "azuresentinel": {
+                    "connectionId": "/subscriptions/{subscriptionId}/resourceGroups/{resourceGroup}/providers/Microsoft.Web/connections/azuresentinel",
+                    "connectionName": "azuresentinel",
+                    "id": "/subscriptions/{subscriptionId}/providers/Microsoft.Web/locations/{location}/managedApis/azuresentinel"
+                },
+                "azuremonitorlogs": {
+                    "connectionId": "/subscriptions/{subscriptionId}/resourceGroups/{resourceGroup}/providers/Microsoft.Web/connections/azuremonitorlogs",
+                    "connectionName": "azuremonitorlogs",
+                    "id": "/subscriptions/{subscriptionId}/providers/Microsoft.Web/locations/{location}/managedApis/azuremonitorlogs"
+                }
+            }
+        }
+    }
+}
