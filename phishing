@@ -200,6 +200,10 @@
                     },
                     "path": "/incident-creation"
                 },
+                "recurrence": {
+                    "frequency": "Minute",
+                    "interval": 5
+                },
                 "type": "ApiConnection"
             }
         }
