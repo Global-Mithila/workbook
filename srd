@@ -6,12 +6,12 @@
                 "type": "Foreach",
                 "foreach": "@body('Entities_-_Get_Accounts')?['Accounts']",
                 "actions": {
-                    "Run_Activity_Analysis_KQL": {
+                    "Run_Your_Exact_KQL": {
                         "type": "ApiConnection",
                         "inputs": {
                             "body": {
-                                "query": "let targetAccount = \"@{items('For_each_Account_Entity')?['AccountName']}\";\nAzureActivity\n| where TimeGenerated > ago(90d)\n| where Caller has targetAccount or Claims has targetAccount\n| summarize Count = count(), FirstSeen = min(TimeGenerated), LastSeen = max(TimeGenerated), Operations = make_set(OperationNameValue, 5), Regions = make_set(Location) by Caller",
-                                "timespan": "P90D"
+                                "query": "let targetAccount = '@{items('For_each_Account_Entity')?['AccountName']}';\n// Add or remove operation names below as per your requirements.\nlet szOperationNames = dynamic([\"Microsoft.Compute/virtualMachines/write\", \"Microsoft.Resources/deployments/write\", \"Microsoft.Resources/subscriptions/resourceGroups/write\"]);\nlet starttime = 14d;\nlet endtime = 1d;\nlet RareCaller = union AzureActivity\n| where TimeGenerated between (ago(starttime) .. ago(endtime))\n| where OperationNameValue in~ (szOperationNames)\n| summarize count() by CallerIpAddress, Caller, OperationNameValue, bin(TimeGenerated,1d)\n// Returns all the records from the right side that don't have matches from the left.\n| join kind=rightantisemi (\nunion AzureActivity\n| where TimeGenerated > ago(endtime)\n// We filter by the Incident Account here to ensure we message the right person\n| where Caller has targetAccount\n| where OperationNameValue in~ (szOperationNames)\n| summarize StartTimeUtc = min(TimeGenerated), EndTimeUtc = max(TimeGenerated), ActivityTimeStamp = make_set(TimeGenerated,100), ActivityStatusValue = make_set(ActivityStatusValue,100), CorrelationIds = make_set(CorrelationId,100), ResourceGroups = make_set(ResourceGroup,100), ResourceIds = make_set(_ResourceId,100), ActivityCountByCallerIPAddress = count()\nby CallerIpAddress, Caller, OperationNameValue) on CallerIpAddress, Caller, OperationNameValue;\nRareCaller\n| extend Name = iif(Caller has '@',tostring(split(Caller,'@',0)[0]),\"\")\n| extend UPNSuffix = iif(Caller has '@',tostring(split(Caller,'@',1)[0]),\"\")\n| extend AadUserId = iif(Caller !has '@',Caller,\"\")\n| project CallerIpAddress, Name, Caller, OperationNameValue, StartTimeUtc, EndTimeUtc, ResourceIds",
+                                "timespan": "P14D"
                             },
                             "host": {
                                 "connection": {
@@ -23,195 +23,177 @@
                         },
                         "runAfter": {}
                     },
-                    "Create_HTML_Table": {
-                        "type": "Table",
-                        "inputs": {
-                            "format": "HTML",
-                            "from": "@body('Run_Activity_Analysis_KQL')?['value']"
-                        },
-                        "runAfter": {
-                            "Run_Activity_Analysis_KQL": [
-                                "Succeeded"
+                    "Condition_-_Is_Result_Empty?": {
+                        "type": "If",
+                        "expression": {
+                            "greater": [
+                                "@length(body('Run_Your_Exact_KQL')?['value'])",
+                                0
                             ]
-                        }
-                    },
-                    "Add_Investigation_Comment": {
-                        "type": "ApiConnection",
-                        "inputs": {
-                            "body": {
-                                "comment": "🤖 **Automated Investigation Report**\n\nActivity Summary for Actor: @{items('For_each_Account_Entity')?['AccountName']}\n\n@{body('Create_HTML_Table')}"
+                        },
+                        "actions": {
+                            "Create_HTML_Table": {
+                                "type": "Table",
+                                "inputs": {
+                                    "format": "HTML",
+                                    "from": "@body('Run_Your_Exact_KQL')?['value']",
+                                    "columns": [
+                                        { "header": "Caller IP", "value": "@item()?['CallerIpAddress']" },
+                                        { "header": "Name", "value": "@item()?['Name']" },
+                                        { "header": "Operation", "value": "@item()?['OperationNameValue']" },
+                                        { "header": "Start Time (UTC)", "value": "@item()?['StartTimeUtc']" },
+                                        { "header": "End Time (UTC)", "value": "@item()?['EndTimeUtc']" },
+                                        { "header": "Resource IDs", "value": "@item()?['ResourceIds']" }
+                                    ]
+                                },
+                                "runAfter": {}
                             },
-                            "host": {
-                                "connection": {
-                                    "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                            "Add_Comment_-_Table_Result": {
+                                "type": "ApiConnection",
+                                "inputs": {
+                                    "body": {
+                                        "comment": "📊 **Automated Analysis Result**\n\nRare activity detected based on 14-day baseline:\n\n@{body('Create_HTML_Table')}\n\n*Sending verification request to user...*"
+                                    },
+                                    "host": {
+                                        "connection": {
+                                            "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                                        }
+                                    },
+                                    "method": "post",
+                                    "path": "/Incidents/@{encodeURIComponent(triggerBody()?['object']?['properties']?['incidentNumber'])}/Comments"
+                                },
+                                "runAfter": {
+                                    "Create_HTML_Table": [ "Succeeded" ]
                                 }
                             },
-                            "method": "post",
-                            "path": "/Incidents/@{encodeURIComponent(triggerBody()?['object']?['properties']?['incidentNumber'])}/Comments"
-                        },
-                        "runAfter": {
-                            "Create_HTML_Table": [
-                                "Succeeded"
-                            ]
-                        }
-                    },
-                    "Post_Triage_Card_to_SOC": {
-                        "type": "ApiConnectionWebhook",
-                        "inputs": {
-                            "body": {
-                                "type": "AdaptiveCard",
-                                "body": [
-                                    {
-                                        "type": "TextBlock",
-                                        "size": "Large",
-                                        "weight": "Bolder",
-                                        "text": "🛡️ Suspicious Resource Alert"
-                                    },
-                                    {
-                                        "type": "FactSet",
-                                        "facts": [
+                            "Post_Adaptive_Card_to_User": {
+                                "type": "ApiConnectionWebhook",
+                                "inputs": {
+                                    "body": {
+                                        "type": "AdaptiveCard",
+                                        "body": [
+                                            { "type": "TextBlock", "size": "Medium", "weight": "Bolder", "text": "Security Verification Request" },
+                                            { "type": "TextBlock", "text": "Hi @{body('Run_Your_Exact_KQL')?['value']?[0]?['Name']},", "wrap": true },
+                                            { "type": "TextBlock", "text": "Our security system detected rare activity on your account. Please confirm if this was you.", "wrap": true },
                                             {
-                                                "title": "Actor:",
-                                                "value": "@{items('For_each_Account_Entity')?['AccountName']}"
+                                                "type": "FactSet",
+                                                "facts": [
+                                                    { "title": "Operation:", "value": "@{body('Run_Your_Exact_KQL')?['value']?[0]?['OperationNameValue']}" },
+                                                    { "title": "IP Address:", "value": "@{body('Run_Your_Exact_KQL')?['value']?[0]?['CallerIpAddress']}" },
+                                                    { "title": "Time (UTC):", "value": "@{body('Run_Your_Exact_KQL')?['value']?[0]?['StartTimeUtc']}" }
+                                                ]
                                             },
-                                            {
-                                                "title": "Analysis:",
-                                                "value": "Check Incident Comments for full Activity Log (90 Days)."
+                                            { "type": "TextBlock", "text": "Was this you?", "weight": "Bolder" }
+                                        ],
+                                        "actions": [
+                                            { "type": "Action.Submit", "title": "✅ Yes, I did this", "data": { "resp": "yes" } },
+                                            { "type": "Action.Submit", "title": "❌ No, NOT me", "data": { "resp": "no" } }
+                                        ],
+                                        "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+                                        "version": "1.4"
+                                    },
+                                    "host": {
+                                        "connection": {
+                                            "name": "@parameters('$connections')['teams']['connectionId']"
+                                        }
+                                    },
+                                    "path": "/v1.0/teams/conversation/member/users/@{encodeURIComponent(items('For_each_Account_Entity')?['AccountName'])}/adaptivecard/action"
+                                },
+                                "runAfter": {
+                                    "Add_Comment_-_Table_Result": [ "Succeeded" ]
+                                }
+                            },
+                            "Condition_-_User_Response": {
+                                "type": "If",
+                                "expression": {
+                                    "equals": [ "@body('Post_Adaptive_Card_to_User')?['data']?['resp']", "yes" ]
+                                },
+                                "actions": {
+                                    "Comment_-_BAU": {
+                                        "type": "ApiConnection",
+                                        "inputs": {
+                                            "body": {
+                                                "comment": "✅ **User Confirmed**\n\nThe user confirmed this was BAU activity via Teams verification."
+                                            },
+                                            "host": {
+                                                "connection": {
+                                                    "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                                                }
+                                            },
+                                            "method": "post",
+                                            "path": "/Incidents/@{encodeURIComponent(triggerBody()?['object']?['properties']?['incidentNumber'])}/Comments"
+                                        }
+                                    }
+                                },
+                                "else": {
+                                    "actions": {
+                                        "Comment_-_Denied": {
+                                            "type": "ApiConnection",
+                                            "inputs": {
+                                                "body": {
+                                                    "comment": "🚨 **USER DENIED ACTIVITY**\n\nThe user explicitly stated \"No, Not Me\".\nAction: Posted to SOC Channel & Added Investigation Task."
+                                                },
+                                                "host": {
+                                                    "connection": {
+                                                        "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                                                    }
+                                                },
+                                                "method": "post",
+                                                "path": "/Incidents/@{encodeURIComponent(triggerBody()?['object']?['properties']?['incidentNumber'])}/Comments"
                                             }
-                                        ]
-                                    },
-                                    {
-                                        "type": "TextBlock",
-                                        "text": "Select Triage Action:",
-                                        "weight": "Bolder",
-                                        "spacing": "Medium"
-                                    }
-                                ],
-                                "actions": [
-                                    {
-                                        "type": "Action.Submit",
-                                        "title": "🔥 Escalate (Sev High)",
-                                        "data": {
-                                            "x_action": "escalate"
-                                        }
-                                    },
-                                    {
-                                        "type": "Action.Submit",
-                                        "title": "✅ Dismiss (False Positive)",
-                                        "data": {
-                                            "x_action": "dismiss"
-                                        }
-                                    },
-                                    {
-                                        "type": "Action.Submit",
-                                        "title": "👀 Manual Investigation (Tag Only)",
-                                        "data": {
-                                            "x_action": "manual"
-                                        }
-                                    }
-                                ],
-                                "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
-                                "version": "1.4"
-                            },
-                            "host": {
-                                "connection": {
-                                    "name": "@parameters('$connections')['teams']['connectionId']"
-                                }
-                            },
-                            "path": "/v1.0/teams/conversation/member/groups/@{encodeURIComponent('YOUR_SOC_CHANNEL_ID_HERE')}/channels/@{encodeURIComponent('YOUR_SOC_CHANNEL_ID_HERE')}/adaptivecard/action",
-                            "retryPolicy": {
-                                "type": "None"
-                            }
-                        },
-                        "runAfter": {
-                            "Add_Investigation_Comment": [
-                                "Succeeded"
-                            ]
-                        }
-                    },
-                    "Switch_-_Analyst_Decision": {
-                        "type": "Switch",
-                        "expression": "@body('Post_Triage_Card_to_SOC')?['data']?['x_action']",
-                        "cases": {
-                            "Case_Escalate": {
-                                "case": "escalate",
-                                "actions": {
-                                    "Update_Incident_-_High_Sev": {
-                                        "type": "ApiConnection",
-                                        "inputs": {
-                                            "body": {
-                                                "severity": "High",
-                                                "status": "Active",
-                                                "comment": "Escalated to High Severity via SOC Automation Card."
+                                        },
+                                        "Post_Escalation_to_SOC": {
+                                            "type": "ApiConnection",
+                                            "inputs": {
+                                                "body": {
+                                                    "body": {
+                                                        "content": "🚨 **CRITICAL: User Denied Activity**\n\n**Incident:** #@{triggerBody()?['object']?['properties']?['incidentNumber']}\n**User:** @{body('Run_Your_Exact_KQL')?['value']?[0]?['Name']} (@{body('Run_Your_Exact_KQL')?['value']?[0]?['Caller']})\n\nThe user denied performing the operation: **@{body('Run_Your_Exact_KQL')?['value']?[0]?['OperationNameValue']}**.\n\n**Next Steps:**\n1. Review the Task added to the incident.\n2. Isolate the account if necessary."
+                                                    }
+                                                    
+                                                },
+                                                "host": {
+                                                    "connection": {
+                                                        "name": "@parameters('$connections')['teams']['connectionId']"
+                                                    }
+                                                },
+                                                "method": "post",
+                                                "path": "/v3/beta/teams/YOUR_SOC_CHANNEL_ID/channels/YOUR_SOC_CHANNEL_ID/messages"
                                             },
-                                            "host": {
-                                                "connection": {
-                                                    "name": "@parameters('$connections')['azuresentinel']['connectionId']"
-                                                }
+                                            "runAfter": {
+                                                "Comment_-_Denied": [ "Succeeded" ]
+                                            }
+                                        },
+                                        "Add_Task_-_Investigation_Checklist": {
+                                            "type": "ApiConnection",
+                                            "inputs": {
+                                                "body": {
+                                                    "title": "Investigate User Denied Activity",
+                                                    "description": "<p><strong>User denied this activity via Teams.</strong><br>Checklist:<br>1. Check Sign-in Logs for foreign IPs.<br>2. Confirm Resource naming convention.<br>3. Reset User Password if compromised.</p>",
+                                                    "status": "New"
+                                                },
+                                                "host": {
+                                                    "connection": {
+                                                        "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                                                    }
+                                                },
+                                                "method": "post",
+                                                "path": "/Incidents/@{encodeURIComponent(triggerBody()?['object']?['id'])}/tasks"
                                             },
-                                            "method": "put",
-                                            "path": "/Incidents/@{encodeURIComponent(triggerBody()?['object']?['properties']?['incidentNumber'])}"
-                                        }
-                                    }
-                                }
-                            },
-                            "Case_Dismiss": {
-                                "case": "dismiss",
-                                "actions": {
-                                    "Update_Incident_-_Close": {
-                                        "type": "ApiConnection",
-                                        "inputs": {
-                                            "body": {
-                                                "status": "Closed",
-                                                "classification": "BenignPositive",
-                                                "comment": "Dismissed as False Positive via SOC Automation Card."
-                                            },
-                                            "host": {
-                                                "connection": {
-                                                    "name": "@parameters('$connections')['azuresentinel']['connectionId']"
-                                                }
-                                            },
-                                            "method": "put",
-                                            "path": "/Incidents/@{encodeURIComponent(triggerBody()?['object']?['properties']?['incidentNumber'])}"
-                                        }
-                                    }
-                                }
-                            },
-                            "Case_Manual": {
-                                "case": "manual",
-                                "actions": {
-                                    "Add_Tag_-_Manual_Review": {
-                                        "type": "ApiConnection",
-                                        "inputs": {
-                                            "body": {
-                                                "properties": {
-                                                    "etag": "*",
-                                                    "tag": "Manual_Review_Needed"
-                                                }
-                                            },
-                                            "host": {
-                                                "connection": {
-                                                    "name": "@parameters('$connections')['azuresentinel']['connectionId']"
-                                                }
-                                            },
-                                            "method": "put",
-                                            "path": "/Incidents/@{encodeURIComponent(triggerBody()?['object']?['properties']?['incidentNumber'])}/Tags/Manual_Review_Needed"
+                                            "runAfter": {
+                                                "Post_Escalation_to_SOC": [ "Succeeded" ]
+                                            }
                                         }
                                     }
                                 }
                             }
                         },
                         "runAfter": {
-                            "Post_Triage_Card_to_SOC": [
-                                "Succeeded"
-                            ]
+                            "Run_Your_Exact_KQL": [ "Succeeded" ]
                         }
                     }
                 },
                 "runAfter": {
-                    "Entities_-_Get_Accounts": [
-                        "Succeeded"
-                    ]
+                    "Entities_-_Get_Accounts": [ "Succeeded" ]
                 }
             },
             "Entities_-_Get_Accounts": {
@@ -258,19 +240,19 @@
         "$connections": {
             "value": {
                 "azuresentinel": {
-                    "connectionId": "/subscriptions/YOUR_SUB_ID/resourceGroups/YOUR_RG/providers/Microsoft.Web/connections/azuresentinel",
+                    "connectionId": "/subscriptions/YOUR_SUB/resourceGroups/YOUR_RG/providers/Microsoft.Web/connections/azuresentinel",
                     "connectionName": "azuresentinel",
-                    "id": "/subscriptions/YOUR_SUB_ID/providers/Microsoft.Web/locations/YOUR_REGION/managedApis/azuresentinel"
+                    "id": "/subscriptions/YOUR_SUB/providers/Microsoft.Web/locations/YOUR_REGION/managedApis/azuresentinel"
                 },
                 "azuremonitorlogs": {
-                    "connectionId": "/subscriptions/YOUR_SUB_ID/resourceGroups/YOUR_RG/providers/Microsoft.Web/connections/azuremonitorlogs",
+                    "connectionId": "/subscriptions/YOUR_SUB/resourceGroups/YOUR_RG/providers/Microsoft.Web/connections/azuremonitorlogs",
                     "connectionName": "azuremonitorlogs",
-                    "id": "/subscriptions/YOUR_SUB_ID/providers/Microsoft.Web/locations/YOUR_REGION/managedApis/azuremonitorlogs"
+                    "id": "/subscriptions/YOUR_SUB/providers/Microsoft.Web/locations/YOUR_REGION/managedApis/azuremonitorlogs"
                 },
                 "teams": {
-                    "connectionId": "/subscriptions/YOUR_SUB_ID/resourceGroups/YOUR_RG/providers/Microsoft.Web/connections/teams",
+                    "connectionId": "/subscriptions/YOUR_SUB/resourceGroups/YOUR_RG/providers/Microsoft.Web/connections/teams",
                     "connectionName": "teams",
-                    "id": "/subscriptions/YOUR_SUB_ID/providers/Microsoft.Web/locations/YOUR_REGION/managedApis/teams"
+                    "id": "/subscriptions/YOUR_SUB/providers/Microsoft.Web/locations/YOUR_REGION/managedApis/teams"
                 }
             }
         }
