@@ -149,7 +149,6 @@
                                                     "body": {
                                                         "content": "🚨 **CRITICAL: User Denied Activity**\n\n**Incident:** #@{triggerBody()?['object']?['properties']?['incidentNumber']}\n**User:** @{body('Run_Your_Exact_KQL')?['value']?[0]?['Name']} (@{body('Run_Your_Exact_KQL')?['value']?[0]?['Caller']})\n\nThe user denied performing the operation: **@{body('Run_Your_Exact_KQL')?['value']?[0]?['OperationNameValue']}**.\n\n**Next Steps:**\n1. Review the Task added to the incident.\n2. Isolate the account if necessary."
                                                     }
-                                                    
                                                 },
                                                 "host": {
                                                     "connection": {
@@ -185,6 +184,9 @@
                                         }
                                     }
                                 }
+                            },
+                            "runAfter": {
+                                "Post_Adaptive_Card_to_User": [ "Succeeded" ]
                             }
                         },
                         "runAfter": {
