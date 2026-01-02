@@ -1,0 +1,6 @@
+let targetUser = "@{items('For_each_Account_Entity')?['AccountName']}";
+BehaviorAnalytics
+| where UserPrincipalName has targetUser
+| where ActionType in ("AzureResourceCreation", "New App Registration")
+| where TimeGenerated > ago(90d)
+| summarize TotalActivities = count(), LastSeen = max(TimeGenerated), DistinctRegions = dcount(SourceLocation)
