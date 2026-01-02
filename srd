@@ -6,11 +6,11 @@
                 "type": "Foreach",
                 "foreach": "@body('Entities_-_Get_Accounts')?['Accounts']",
                 "actions": {
-                    "Run_Your_Exact_KQL": {
+                    "Run_KQL_Query": {
                         "type": "ApiConnection",
                         "inputs": {
                             "body": {
-                                "query": "let targetAccount = '@{items('For_each_Account_Entity')?['AccountName']}';\n// Add or remove operation names below as per your requirements.\nlet szOperationNames = dynamic([\"Microsoft.Compute/virtualMachines/write\", \"Microsoft.Resources/deployments/write\", \"Microsoft.Resources/subscriptions/resourceGroups/write\"]);\nlet starttime = 14d;\nlet endtime = 1d;\nlet RareCaller = union AzureActivity\n| where TimeGenerated between (ago(starttime) .. ago(endtime))\n| where OperationNameValue in~ (szOperationNames)\n| summarize count() by CallerIpAddress, Caller, OperationNameValue, bin(TimeGenerated,1d)\n// Returns all the records from the right side that don't have matches from the left.\n| join kind=rightantisemi (\nunion AzureActivity\n| where TimeGenerated > ago(endtime)\n// We filter by the Incident Account here to ensure we message the right person\n| where Caller has targetAccount\n| where OperationNameValue in~ (szOperationNames)\n| summarize StartTimeUtc = min(TimeGenerated), EndTimeUtc = max(TimeGenerated), ActivityTimeStamp = make_set(TimeGenerated,100), ActivityStatusValue = make_set(ActivityStatusValue,100), CorrelationIds = make_set(CorrelationId,100), ResourceGroups = make_set(ResourceGroup,100), ResourceIds = make_set(_ResourceId,100), ActivityCountByCallerIPAddress = count()\nby CallerIpAddress, Caller, OperationNameValue) on CallerIpAddress, Caller, OperationNameValue;\nRareCaller\n| extend Name = iif(Caller has '@',tostring(split(Caller,'@',0)[0]),\"\")\n| extend UPNSuffix = iif(Caller has '@',tostring(split(Caller,'@',1)[0]),\"\")\n| extend AadUserId = iif(Caller !has '@',Caller,\"\")\n| project CallerIpAddress, Name, Caller, OperationNameValue, StartTimeUtc, EndTimeUtc, ResourceIds",
+                                "query": "let targetAccount = '@{items('For_each_Account_Entity')?['AccountName']}';\nlet szOperationNames = dynamic([\"Microsoft.Compute/virtualMachines/write\", \"Microsoft.Resources/deployments/write\", \"Microsoft.Resources/subscriptions/resourceGroups/write\"]);\nlet starttime = 14d;\nlet endtime = 1d;\nlet RareCaller = union AzureActivity\n| where TimeGenerated between (ago(starttime) .. ago(endtime))\n| where OperationNameValue in~ (szOperationNames)\n| summarize count() by CallerIpAddress, Caller, OperationNameValue, bin(TimeGenerated,1d)\n| join kind=rightantisemi (\nunion AzureActivity\n| where TimeGenerated > ago(endtime)\n| where Caller has targetAccount\n| where OperationNameValue in~ (szOperationNames)\n| summarize StartTimeUtc = min(TimeGenerated), EndTimeUtc = max(TimeGenerated), ActivityTimeStamp = make_set(TimeGenerated,100), ActivityStatusValue = make_set(ActivityStatusValue,100), CorrelationIds = make_set(CorrelationId,100), ResourceGroups = make_set(ResourceGroup,100), ResourceIds = make_set(_ResourceId,100), ActivityCountByCallerIPAddress = count()\nby CallerIpAddress, Caller, OperationNameValue) on CallerIpAddress, Caller, OperationNameValue;\nRareCaller\n| extend Name = iif(Caller has '@',tostring(split(Caller,'@',0)[0]),\"\")\n| extend UPNSuffix = iif(Caller has '@',tostring(split(Caller,'@',1)[0]),\"\")\n| extend AadUserId = iif(Caller !has '@',Caller,\"\")\n| project CallerIpAddress, Name, Caller, OperationNameValue, StartTimeUtc, EndTimeUtc, ResourceIds",
                                 "timespan": "P14D"
                             },
                             "host": {
@@ -23,11 +23,11 @@
                         },
                         "runAfter": {}
                     },
-                    "Condition_-_Is_Result_Empty?": {
+                    "Check_If_Results_Found": {
                         "type": "If",
                         "expression": {
                             "greater": [
-                                "@length(body('Run_Your_Exact_KQL')?['value'])",
+                                "@length(body('Run_KQL_Query')?['value'])",
                                 0
                             ]
                         },
@@ -36,19 +36,18 @@
                                 "type": "Table",
                                 "inputs": {
                                     "format": "HTML",
-                                    "from": "@body('Run_Your_Exact_KQL')?['value']",
+                                    "from": "@body('Run_KQL_Query')?['value']",
                                     "columns": [
-                                        { "header": "Caller IP", "value": "@item()?['CallerIpAddress']" },
-                                        { "header": "Name", "value": "@item()?['Name']" },
+                                        { "header": "IP Address", "value": "@item()?['CallerIpAddress']" },
+                                        { "header": "User", "value": "@item()?['Name']" },
                                         { "header": "Operation", "value": "@item()?['OperationNameValue']" },
-                                        { "header": "Start Time (UTC)", "value": "@item()?['StartTimeUtc']" },
-                                        { "header": "End Time (UTC)", "value": "@item()?['EndTimeUtc']" },
-                                        { "header": "Resource IDs", "value": "@item()?['ResourceIds']" }
+                                        { "header": "Time (UTC)", "value": "@item()?['StartTimeUtc']" },
+                                        { "header": "Resources", "value": "@item()?['ResourceIds']" }
                                     ]
                                 },
                                 "runAfter": {}
                             },
-                            "Add_Comment_-_Table_Result": {
+                            "Add_Comment_Table": {
                                 "type": "ApiConnection",
                                 "inputs": {
                                     "body": {
@@ -66,21 +65,21 @@
                                     "Create_HTML_Table": [ "Succeeded" ]
                                 }
                             },
-                            "Post_Adaptive_Card_to_User": {
+                            "Post_Card_To_User": {
                                 "type": "ApiConnectionWebhook",
                                 "inputs": {
                                     "body": {
                                         "type": "AdaptiveCard",
                                         "body": [
                                             { "type": "TextBlock", "size": "Medium", "weight": "Bolder", "text": "Security Verification Request" },
-                                            { "type": "TextBlock", "text": "Hi @{body('Run_Your_Exact_KQL')?['value']?[0]?['Name']},", "wrap": true },
+                                            { "type": "TextBlock", "text": "Hi @{body('Run_KQL_Query')?['value']?[0]?['Name']},", "wrap": true },
                                             { "type": "TextBlock", "text": "Our security system detected rare activity on your account. Please confirm if this was you.", "wrap": true },
                                             {
                                                 "type": "FactSet",
                                                 "facts": [
-                                                    { "title": "Operation:", "value": "@{body('Run_Your_Exact_KQL')?['value']?[0]?['OperationNameValue']}" },
-                                                    { "title": "IP Address:", "value": "@{body('Run_Your_Exact_KQL')?['value']?[0]?['CallerIpAddress']}" },
-                                                    { "title": "Time (UTC):", "value": "@{body('Run_Your_Exact_KQL')?['value']?[0]?['StartTimeUtc']}" }
+                                                    { "title": "Operation:", "value": "@{body('Run_KQL_Query')?['value']?[0]?['OperationNameValue']}" },
+                                                    { "title": "IP Address:", "value": "@{body('Run_KQL_Query')?['value']?[0]?['CallerIpAddress']}" },
+                                                    { "title": "Time (UTC):", "value": "@{body('Run_KQL_Query')?['value']?[0]?['StartTimeUtc']}" }
                                                 ]
                                             },
                                             { "type": "TextBlock", "text": "Was this you?", "weight": "Bolder" }
@@ -100,20 +99,27 @@
                                     "path": "/v1.0/teams/conversation/member/users/@{encodeURIComponent(items('For_each_Account_Entity')?['AccountName'])}/adaptivecard/action"
                                 },
                                 "runAfter": {
-                                    "Add_Comment_-_Table_Result": [ "Succeeded" ]
+                                    "Add_Comment_Table": [ "Succeeded" ]
                                 }
                             },
-                            "Condition_-_User_Response": {
+                            "Compose_Response": {
+                                "type": "Compose",
+                                "inputs": "@body('Post_Card_To_User')?['data']?['resp']",
+                                "runAfter": {
+                                    "Post_Card_To_User": [ "Succeeded" ]
+                                }
+                            },
+                            "Check_User_Response": {
                                 "type": "If",
                                 "expression": {
-                                    "equals": [ "@body('Post_Adaptive_Card_to_User')?['data']?['resp']", "yes" ]
+                                    "equals": [ "@outputs('Compose_Response')", "yes" ]
                                 },
                                 "actions": {
-                                    "Comment_-_BAU": {
+                                    "Comment_BAU": {
                                         "type": "ApiConnection",
                                         "inputs": {
                                             "body": {
-                                                "comment": "✅ **User Confirmed**\n\nThe user confirmed this was BAU activity via Teams verification."
+                                                "comment": "✅ **User Confirmed**\n\nThe user confirmed this was BAU activity via Teams."
                                             },
                                             "host": {
                                                 "connection": {
@@ -127,11 +133,11 @@
                                 },
                                 "else": {
                                     "actions": {
-                                        "Comment_-_Denied": {
+                                        "Comment_Denied": {
                                             "type": "ApiConnection",
                                             "inputs": {
                                                 "body": {
-                                                    "comment": "🚨 **USER DENIED ACTIVITY**\n\nThe user explicitly stated \"No, Not Me\".\nAction: Posted to SOC Channel & Added Investigation Task."
+                                                    "comment": "🚨 **USER DENIED ACTIVITY**\n\nThe user explicitly stated \"No, Not Me\".\nAction: Escalating to SOC."
                                                 },
                                                 "host": {
                                                     "connection": {
@@ -142,12 +148,12 @@
                                                 "path": "/Incidents/@{encodeURIComponent(triggerBody()?['object']?['properties']?['incidentNumber'])}/Comments"
                                             }
                                         },
-                                        "Post_Escalation_to_SOC": {
+                                        "Post_Escalation": {
                                             "type": "ApiConnection",
                                             "inputs": {
                                                 "body": {
                                                     "body": {
-                                                        "content": "🚨 **CRITICAL: User Denied Activity**\n\n**Incident:** #@{triggerBody()?['object']?['properties']?['incidentNumber']}\n**User:** @{body('Run_Your_Exact_KQL')?['value']?[0]?['Name']} (@{body('Run_Your_Exact_KQL')?['value']?[0]?['Caller']})\n\nThe user denied performing the operation: **@{body('Run_Your_Exact_KQL')?['value']?[0]?['OperationNameValue']}**.\n\n**Next Steps:**\n1. Review the Task added to the incident.\n2. Isolate the account if necessary."
+                                                        "content": "🚨 **CRITICAL: User Denied Activity**\n\n**Incident:** #@{triggerBody()?['object']?['properties']?['incidentNumber']}\n**User:** @{body('Run_KQL_Query')?['value']?[0]?['Name']} (@{body('Run_KQL_Query')?['value']?[0]?['Caller']})\n\nThe user denied performing the operation: **@{body('Run_KQL_Query')?['value']?[0]?['OperationNameValue']}**.\n\n**Action Required:**\n1. Review the Incident.\n2. Isolate the account immediately."
                                                     }
                                                 },
                                                 "host": {
@@ -159,15 +165,15 @@
                                                 "path": "/v3/beta/teams/YOUR_SOC_CHANNEL_ID/channels/YOUR_SOC_CHANNEL_ID/messages"
                                             },
                                             "runAfter": {
-                                                "Comment_-_Denied": [ "Succeeded" ]
+                                                "Comment_Denied": [ "Succeeded" ]
                                             }
                                         },
-                                        "Add_Task_-_Investigation_Checklist": {
+                                        "Add_Task_Checklist": {
                                             "type": "ApiConnection",
                                             "inputs": {
                                                 "body": {
                                                     "title": "Investigate User Denied Activity",
-                                                    "description": "<p><strong>User denied this activity via Teams.</strong><br>Checklist:<br>1. Check Sign-in Logs for foreign IPs.<br>2. Confirm Resource naming convention.<br>3. Reset User Password if compromised.</p>",
+                                                    "description": "<p><strong>User denied this activity via Teams.</strong><br>Checklist:<br>1. Check Sign-in Logs for foreign IPs.<br>2. Confirm Resource naming convention.<br>3. Reset User Password.</p>",
                                                     "status": "New"
                                                 },
                                                 "host": {
@@ -179,18 +185,18 @@
                                                 "path": "/Incidents/@{encodeURIComponent(triggerBody()?['object']?['id'])}/tasks"
                                             },
                                             "runAfter": {
-                                                "Post_Escalation_to_SOC": [ "Succeeded" ]
+                                                "Post_Escalation": [ "Succeeded" ]
                                             }
                                         }
                                     }
+                                },
+                                "runAfter": {
+                                    "Compose_Response": [ "Succeeded" ]
                                 }
-                            },
-                            "runAfter": {
-                                "Post_Adaptive_Card_to_User": [ "Succeeded" ]
                             }
                         },
                         "runAfter": {
-                            "Run_Your_Exact_KQL": [ "Succeeded" ]
+                            "Run_KQL_Query": [ "Succeeded" ]
                         }
                     }
                 },
