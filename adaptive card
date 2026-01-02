@@ -1,0 +1,63 @@
+{
+  "type": "AdaptiveCard",
+  "body": [
+    {
+      "type": "TextBlock",
+      "size": "Medium",
+      "weight": "Bolder",
+      "text": "Security Incident Verification Request",
+      "color": "Attention"
+    },
+    {
+      "type": "TextBlock",
+      "text": "Hi @{body('Run_query_and_list_results_V2')?['value']?[0]?['Name']},",
+      "wrap": true
+    },
+    {
+      "type": "TextBlock",
+      "text": "Our SOC portal  detected suspecious Resource Development from  your account. We created this chat to verify if this was authorised by you.",
+      "wrap": true
+    },
+    {
+      "type": "FactSet",
+      "facts": [
+        {
+          "title": "Operation:",
+          "value": "@{body('Run_query_and_list_results_V2')?['value']?[0]?['OperationNameValue']}"
+        },
+        {
+          "title": "IP Address:",
+          "value": "@{body('Run_query_and_list_results_V2')?['value']?[0]?['CallerIpAddress']}"
+        },
+        {
+          "title": "Time (UTC):",
+          "value": "@{body('Run_query_and_list_results_V2')?['value']?[0]?['StartTimeUtc']}"
+        }
+      ]
+    },
+    {
+      "type": "TextBlock",
+      "text": "Was this you?",
+      "weight": "Bolder",
+      "size": "Medium"
+    }
+  ],
+  "actions": [
+    {
+      "type": "Action.Submit",
+      "title": "Yes, I did this",
+      "data": {
+        "id": "yes"
+      }
+    },
+    {
+      "type": "Action.Submit",
+      "title": "No, NOT me",
+      "data": {
+        "id": "no"
+      }
+    }
+  ],
+  "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+  "version": "1.4"
+}
