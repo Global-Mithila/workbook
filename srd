@@ -1,0 +1,278 @@
+{
+    "definition": {
+        "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+        "actions": {
+            "For_each_Account_Entity": {
+                "type": "Foreach",
+                "foreach": "@body('Entities_-_Get_Accounts')?['Accounts']",
+                "actions": {
+                    "Run_Activity_Analysis_KQL": {
+                        "type": "ApiConnection",
+                        "inputs": {
+                            "body": {
+                                "query": "let targetAccount = \"@{items('For_each_Account_Entity')?['AccountName']}\";\nAzureActivity\n| where TimeGenerated > ago(90d)\n| where Caller has targetAccount or Claims has targetAccount\n| summarize Count = count(), FirstSeen = min(TimeGenerated), LastSeen = max(TimeGenerated), Operations = make_set(OperationNameValue, 5), Regions = make_set(Location) by Caller",
+                                "timespan": "P90D"
+                            },
+                            "host": {
+                                "connection": {
+                                    "name": "@parameters('$connections')['azuremonitorlogs']['connectionId']"
+                                }
+                            },
+                            "method": "post",
+                            "path": "/query"
+                        },
+                        "runAfter": {}
+                    },
+                    "Create_HTML_Table": {
+                        "type": "Table",
+                        "inputs": {
+                            "format": "HTML",
+                            "from": "@body('Run_Activity_Analysis_KQL')?['value']"
+                        },
+                        "runAfter": {
+                            "Run_Activity_Analysis_KQL": [
+                                "Succeeded"
+                            ]
+                        }
+                    },
+                    "Add_Investigation_Comment": {
+                        "type": "ApiConnection",
+                        "inputs": {
+                            "body": {
+                                "comment": "🤖 **Automated Investigation Report**\n\nActivity Summary for Actor: @{items('For_each_Account_Entity')?['AccountName']}\n\n@{body('Create_HTML_Table')}"
+                            },
+                            "host": {
+                                "connection": {
+                                    "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                                }
+                            },
+                            "method": "post",
+                            "path": "/Incidents/@{encodeURIComponent(triggerBody()?['object']?['properties']?['incidentNumber'])}/Comments"
+                        },
+                        "runAfter": {
+                            "Create_HTML_Table": [
+                                "Succeeded"
+                            ]
+                        }
+                    },
+                    "Post_Triage_Card_to_SOC": {
+                        "type": "ApiConnectionWebhook",
+                        "inputs": {
+                            "body": {
+                                "type": "AdaptiveCard",
+                                "body": [
+                                    {
+                                        "type": "TextBlock",
+                                        "size": "Large",
+                                        "weight": "Bolder",
+                                        "text": "🛡️ Suspicious Resource Alert"
+                                    },
+                                    {
+                                        "type": "FactSet",
+                                        "facts": [
+                                            {
+                                                "title": "Actor:",
+                                                "value": "@{items('For_each_Account_Entity')?['AccountName']}"
+                                            },
+                                            {
+                                                "title": "Analysis:",
+                                                "value": "Check Incident Comments for full Activity Log (90 Days)."
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        "type": "TextBlock",
+                                        "text": "Select Triage Action:",
+                                        "weight": "Bolder",
+                                        "spacing": "Medium"
+                                    }
+                                ],
+                                "actions": [
+                                    {
+                                        "type": "Action.Submit",
+                                        "title": "🔥 Escalate (Sev High)",
+                                        "data": {
+                                            "x_action": "escalate"
+                                        }
+                                    },
+                                    {
+                                        "type": "Action.Submit",
+                                        "title": "✅ Dismiss (False Positive)",
+                                        "data": {
+                                            "x_action": "dismiss"
+                                        }
+                                    },
+                                    {
+                                        "type": "Action.Submit",
+                                        "title": "👀 Manual Investigation (Tag Only)",
+                                        "data": {
+                                            "x_action": "manual"
+                                        }
+                                    }
+                                ],
+                                "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+                                "version": "1.4"
+                            },
+                            "host": {
+                                "connection": {
+                                    "name": "@parameters('$connections')['teams']['connectionId']"
+                                }
+                            },
+                            "path": "/v1.0/teams/conversation/member/groups/@{encodeURIComponent('YOUR_SOC_CHANNEL_ID_HERE')}/channels/@{encodeURIComponent('YOUR_SOC_CHANNEL_ID_HERE')}/adaptivecard/action",
+                            "retryPolicy": {
+                                "type": "None"
+                            }
+                        },
+                        "runAfter": {
+                            "Add_Investigation_Comment": [
+                                "Succeeded"
+                            ]
+                        }
+                    },
+                    "Switch_-_Analyst_Decision": {
+                        "type": "Switch",
+                        "expression": "@body('Post_Triage_Card_to_SOC')?['data']?['x_action']",
+                        "cases": {
+                            "Case_Escalate": {
+                                "case": "escalate",
+                                "actions": {
+                                    "Update_Incident_-_High_Sev": {
+                                        "type": "ApiConnection",
+                                        "inputs": {
+                                            "body": {
+                                                "severity": "High",
+                                                "status": "Active",
+                                                "comment": "Escalated to High Severity via SOC Automation Card."
+                                            },
+                                            "host": {
+                                                "connection": {
+                                                    "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                                                }
+                                            },
+                                            "method": "put",
+                                            "path": "/Incidents/@{encodeURIComponent(triggerBody()?['object']?['properties']?['incidentNumber'])}"
+                                        }
+                                    }
+                                }
+                            },
+                            "Case_Dismiss": {
+                                "case": "dismiss",
+                                "actions": {
+                                    "Update_Incident_-_Close": {
+                                        "type": "ApiConnection",
+                                        "inputs": {
+                                            "body": {
+                                                "status": "Closed",
+                                                "classification": "BenignPositive",
+                                                "comment": "Dismissed as False Positive via SOC Automation Card."
+                                            },
+                                            "host": {
+                                                "connection": {
+                                                    "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                                                }
+                                            },
+                                            "method": "put",
+                                            "path": "/Incidents/@{encodeURIComponent(triggerBody()?['object']?['properties']?['incidentNumber'])}"
+                                        }
+                                    }
+                                }
+                            },
+                            "Case_Manual": {
+                                "case": "manual",
+                                "actions": {
+                                    "Add_Tag_-_Manual_Review": {
+                                        "type": "ApiConnection",
+                                        "inputs": {
+                                            "body": {
+                                                "properties": {
+                                                    "etag": "*",
+                                                    "tag": "Manual_Review_Needed"
+                                                }
+                                            },
+                                            "host": {
+                                                "connection": {
+                                                    "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                                                }
+                                            },
+                                            "method": "put",
+                                            "path": "/Incidents/@{encodeURIComponent(triggerBody()?['object']?['properties']?['incidentNumber'])}/Tags/Manual_Review_Needed"
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "runAfter": {
+                            "Post_Triage_Card_to_SOC": [
+                                "Succeeded"
+                            ]
+                        }
+                    }
+                },
+                "runAfter": {
+                    "Entities_-_Get_Accounts": [
+                        "Succeeded"
+                    ]
+                }
+            },
+            "Entities_-_Get_Accounts": {
+                "type": "ApiConnection",
+                "inputs": {
+                    "body": "@triggerBody()?['object']?['properties']?['relatedEntities']",
+                    "host": {
+                        "connection": {
+                            "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                        }
+                    },
+                    "method": "post",
+                    "path": "/entities/account"
+                },
+                "runAfter": {}
+            }
+        },
+        "contentVersion": "1.0.0.0",
+        "outputs": {},
+        "parameters": {
+            "$connections": {
+                "defaultValue": {},
+                "type": "Object"
+            }
+        },
+        "triggers": {
+            "Microsoft_Sentinel_incident": {
+                "type": "ApiConnectionWebhook",
+                "inputs": {
+                    "body": {
+                        "callback_url": "@{listCallbackUrl()}"
+                    },
+                    "host": {
+                        "connection": {
+                            "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                        }
+                    },
+                    "path": "/incident-creation-trigger"
+                }
+            }
+        }
+    },
+    "parameters": {
+        "$connections": {
+            "value": {
+                "azuresentinel": {
+                    "connectionId": "/subscriptions/YOUR_SUB_ID/resourceGroups/YOUR_RG/providers/Microsoft.Web/connections/azuresentinel",
+                    "connectionName": "azuresentinel",
+                    "id": "/subscriptions/YOUR_SUB_ID/providers/Microsoft.Web/locations/YOUR_REGION/managedApis/azuresentinel"
+                },
+                "azuremonitorlogs": {
+                    "connectionId": "/subscriptions/YOUR_SUB_ID/resourceGroups/YOUR_RG/providers/Microsoft.Web/connections/azuremonitorlogs",
+                    "connectionName": "azuremonitorlogs",
+                    "id": "/subscriptions/YOUR_SUB_ID/providers/Microsoft.Web/locations/YOUR_REGION/managedApis/azuremonitorlogs"
+                },
+                "teams": {
+                    "connectionId": "/subscriptions/YOUR_SUB_ID/resourceGroups/YOUR_RG/providers/Microsoft.Web/connections/teams",
+                    "connectionName": "teams",
+                    "id": "/subscriptions/YOUR_SUB_ID/providers/Microsoft.Web/locations/YOUR_REGION/managedApis/teams"
+                }
+            }
+        }
+    }
+}
