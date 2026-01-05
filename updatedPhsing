@@ -2,185 +2,79 @@
     "definition": {
         "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
         "actions": {
-            "Condition_-_Is_Phishing": {
-                "actions": {
-                    "Entities_-_Get": {
-                        "inputs": {
-                            "body": {
-                                "incidentId": "@triggerBody()?['object']?['id']"
-                            },
-                            "host": {
-                                "connection": {
-                                    "name": "@parameters('$connections')['azuresentinel']['connectionId']"
-                                }
-                            },
-                            "method": "post",
-                            "path": "/Incidents/@{encodeURIComponent(triggerBody()?['object']?['id'])}/entities"
-                        },
-                        "runAfter": {},
-                        "type": "ApiConnection"
-                    },
-                    "Construct_Checklist": {
-                        "inputs": [
-                            {
-                                "Title": "1. Get list of impacted users",
-                                "Description": "<p>Identify all recipients for this alert subject.</p><br><strong>Run KQL:</strong><pre>EmailEvents\n| where Subject == '@{triggerBody()?['object']?['properties']?['title']}'\n| summarize count() by RecipientEmailAddress</pre>"
-                            },
-                            {
-                                "Title": "2. Check latest mailbox access",
-                                "Description": "<p>Check if the attacker accessed mail items.</p><br><strong>Run KQL:</strong><pre>CloudAppEvents\n| where ActionType == 'MailItemsAccessed'\n| where AccountUpn == '@{coalesce(body('Entities_-_Get')?['Accounts']?[0]?['Name'], 'NO_USER_FOUND')}'</pre>"
-                            },
-                            {
-                                "Title": "3. Check Delegate Access",
-                                "Description": "<p>Did they add a delegate?</p><br><strong>Run KQL:</strong><pre>CloudAppEvents\n| where ActionType == 'Add-MailboxPermission'\n| where AccountUpn == '@{coalesce(body('Entities_-_Get')?['Accounts']?[0]?['Name'], 'NO_USER_FOUND')}'</pre>"
-                            },
-                            {
-                                "Title": "4. Check Forwarding Rules",
-                                "Description": "<p>Look for malicious rules.</p><br><strong>Run KQL:</strong><pre>CloudAppEvents\n| where ActionType in ('New-InboxRule', 'Set-InboxRule')\n| where AccountUpn == '@{coalesce(body('Entities_-_Get')?['Accounts']?[0]?['Name'], 'NO_USER_FOUND')}'</pre>"
-                            },
-                            {
-                                "Title": "5. Did user read/open email?",
-                                "Description": "<p>Check delivery action for this subject.</p><br><strong>Run KQL:</strong><pre>EmailPostDeliveryEvents\n| where ActionType == 'Read'\n| join kind=inner (EmailEvents | where Subject == '@{triggerBody()?['object']?['properties']?['title']}') on NetworkMessageId</pre>"
-                            },
-                            {
-                                "Title": "6. Who else got the same email?",
-                                "Description": "<p>Scope the attack by Sender.</p><br><strong>Run KQL:</strong><pre>EmailEvents\n| where SenderIPv4 == '@{coalesce(body('Entities_-_Get')?['Ips']?[0]?['Address'], 'NO_IP_FOUND')}'\n| summarize count() by RecipientEmailAddress</pre>"
-                            },
-                            {
-                                "Title": "7. Check for Attachment",
-                                "Description": "<p>Get attachment details for this subject.</p><br><strong>Run KQL:</strong><pre>EmailAttachmentInfo\n| join kind=inner (EmailEvents | where Subject == '@{triggerBody()?['object']?['properties']?['title']}') on NetworkMessageId</pre>"
-                            },
-                            {
-                                "Title": "8. Analyze Attachment Payload",
-                                "Description": "<p>Check file hash.</p><br><strong>Run KQL:</strong><pre>EmailAttachmentInfo\n| join kind=inner (EmailEvents | where Subject == '@{triggerBody()?['object']?['properties']?['title']}') on NetworkMessageId\n| project SHA256, FileName</pre>"
-                            },
-                            {
-                                "Title": "9. Check True Sender Source",
-                                "Description": "<p>Analyze IP and Headers.</p><br><strong>Run KQL:</strong><pre>EmailEvents\n| where Subject == '@{triggerBody()?['object']?['properties']?['title']}'\n| project SenderIPv4, AuthenticationDetails</pre>"
-                            },
-                            {
-                                "Title": "10. Find Email Message ID",
-                                "Description": "<p>Get the IDs for tracking.</p><br><strong>Run KQL:</strong><pre>EmailEvents\n| where Subject == '@{triggerBody()?['object']?['properties']?['title']}'\n| project NetworkMessageId, InternetMessageId</pre>"
-                            },
-                            {
-                                "Title": "11. Did user click links?",
-                                "Description": "<p>Verify Clicks on the specific URL found in alert.</p><br><strong>Run KQL:</strong><pre>UrlClickEvents\n| where Url has '@{coalesce(body('Entities_-_Get')?['Urls']?[0]?['Url'], 'NO_URL_FOUND')}'\n| project TimeGenerated, ActionType</pre>"
-                            },
-                            {
-                                "Title": "12. Identify Endpoint",
-                                "Description": "<p>Find the machine name associated with the click.</p><br><strong>Run KQL:</strong><pre>DeviceNetworkEvents\n| where RemoteUrl has '@{coalesce(body('Entities_-_Get')?['Urls']?[0]?['Url'], 'NO_URL_FOUND')}'\n| project DeviceName, DeviceId</pre>"
-                            },
-                            {
-                                "Title": "13. Destination Touched?",
-                                "Description": "<p>Did the device connect to the Malicious IP?</p><br><strong>Run KQL:</strong><pre>DeviceNetworkEvents\n| where RemoteIP == '@{coalesce(body('Entities_-_Get')?['Ips']?[0]?['Address'], 'NO_IP_FOUND')}'\n| where ActionType == 'ConnectionSuccess'</pre>"
-                            },
-                            {
-                                "Title": "14. Federated Sign-in Logs",
-                                "Description": "<p>Check ADFS logs for the user.</p><br><strong>Run KQL:</strong><pre>IdentityLogonEvents\n| where AccountUpn == '@{coalesce(body('Entities_-_Get')?['Accounts']?[0]?['Name'], 'NO_USER_FOUND')}'\n| where LogonType == 'Federated'</pre>"
-                            },
-                            {
-                                "Title": "15. Managed Sign-in Logs",
-                                "Description": "<p>Check Entra ID logs for the user.</p><br><strong>Run KQL:</strong><pre>IdentityLogonEvents\n| where AccountUpn == '@{coalesce(body('Entities_-_Get')?['Accounts']?[0]?['Name'], 'NO_USER_FOUND')}'</pre>"
-                            },
-                            {
-                                "Title": "16. Investigate Source IP",
-                                "Description": "<p>Check Sender IP activity.</p><br><strong>Run KQL:</strong><pre>DeviceNetworkEvents\n| where RemoteIP == '@{coalesce(body('Entities_-_Get')?['Ips']?[0]?['Address'], 'NO_IP_FOUND')}'</pre>"
-                            },
-                            {
-                                "Title": "17. Investigate Device ID",
-                                "Description": "<p>Check device timeline for the endpoint involved.</p><br><strong>Run KQL:</strong><pre>DeviceEvents\n| where DeviceName has '@{coalesce(body('Entities_-_Get')?['Hosts']?[0]?['HostName'], 'NO_DEVICE_FOUND')}'\n| limit 100</pre>"
-                            },
-                            {
-                                "Title": "18. Investigate App ID",
-                                "Description": "<p>Check for malicious Apps added by user.</p><br><strong>Run KQL:</strong><pre>CloudAppEvents\n| where ActionType == 'Add service principal'\n| where AccountUpn == '@{coalesce(body('Entities_-_Get')?['Accounts']?[0]?['Name'], 'NO_USER_FOUND')}'</pre>"
-                            }
-                        ],
-                        "runAfter": {
-                            "Entities_-_Get": [
-                                "Succeeded"
-                            ]
-                        },
-                        "type": "Compose"
-                    },
-                    "For_each_Pro_Task": {
-                        "actions": {
-                            "Add_Task_to_Incident": {
-                                "inputs": {
-                                    "body": {
-                                        "description": "@{items('For_each_Pro_Task')?['Description']}",
-                                        "status": "New",
-                                        "title": "@{items('For_each_Pro_Task')?['Title']}"
-                                    },
-                                    "host": {
-                                        "connection": {
-                                            "name": "@parameters('$connections')['azuresentinel']['connectionId']"
-                                        }
-                                    },
-                                    "method": "post",
-                                    "path": "/Incidents/@{encodeURIComponent(triggerBody()?['object']?['name'])}/tasks"
-                                },
-                                "runAfter": {},
-                                "type": "ApiConnection"
-                            }
-                        },
-                        "foreach": "@outputs('Construct_Checklist')",
-                        "runAfter": {
-                            "Construct_Checklist": [
-                                "Succeeded"
-                            ]
-                        },
-                        "type": "Foreach"
-                    }
-                },
-                "expression": {
-                    "or": [
-                        {
-                            "contains": [
-                                "@triggerBody()?['object']?['properties']?['title']",
-                                "Phish"
-                            ]
-                        },
-                        {
-                            "contains": [
-                                "@triggerBody()?['object']?['properties']?['description']",
-                                "Phish"
-                            ]
-                        }
-                    ]
-                },
-                "runAfter": {},
-                "type": "If"
-            }
-        },
-        "contentVersion": "1.0.0.0",
-        "outputs": {},
-        "parameters": {
-            "$connections": {
-                "defaultValue": {},
-                "type": "Object"
-            }
-        },
-        "triggers": {
-            "Microsoft_Sentinel_incident": {
+            "Entities_-_Get": {
                 "inputs": {
+                    "body": {
+                        "incidentId": "@triggerBody()?['object']?['id']"
+                    },
                     "host": {
                         "connection": {
                             "name": "@parameters('$connections')['azuresentinel']['connectionId']"
                         }
                     },
-                    "path": "/incident-creation"
+                    "method": "post",
+                    "path": "/Incidents/@{encodeURIComponent(triggerBody()?['object']?['id'])}/entities"
                 },
-                "recurrence": {
-                    "frequency": "Minute",
-                    "interval": 5
-                },
+                "runAfter": {},
                 "type": "ApiConnection"
-            }
-        }
-    },
-    "parameters": {
-        "$connections": {
-            "value": {}
-        }
-    }
-}
+            },
+            "Construct_Checklist": {
+                "inputs": [
+                    {
+                        "Title": "1. Get list of impacted users",
+                        "Description": "<p>Identify all recipients for this alert subject.</p><br><strong>Run KQL:</strong><pre>EmailEvents\n| where Subject == '@{triggerBody()?['object']?['properties']?['title']}'\n| summarize count() by RecipientEmailAddress</pre>"
+                    },
+                    {
+                        "Title": "2. Check latest mailbox access",
+                        "Description": "<p>Check if the attacker accessed mail items.</p><br><strong>Run KQL:</strong><pre>CloudAppEvents\n| where ActionType == 'MailItemsAccessed'\n| where AccountUpn == '@{coalesce(body('Entities_-_Get')?['Accounts']?[0]?['Name'], 'NO_USER_FOUND')}'</pre>"
+                    },
+                    {
+                        "Title": "3. Check Delegate Access",
+                        "Description": "<p>Did they add a delegate?</p><br><strong>Run KQL:</strong><pre>CloudAppEvents\n| where ActionType == 'Add-MailboxPermission'\n| where AccountUpn == '@{coalesce(body('Entities_-_Get')?['Accounts']?[0]?['Name'], 'NO_USER_FOUND')}'</pre>"
+                    },
+                    {
+                        "Title": "4. Check Forwarding Rules",
+                        "Description": "<p>Look for malicious rules.</p><br><strong>Run KQL:</strong><pre>CloudAppEvents\n| where ActionType in ('New-InboxRule', 'Set-InboxRule')\n| where AccountUpn == '@{coalesce(body('Entities_-_Get')?['Accounts']?[0]?['Name'], 'NO_USER_FOUND')}'</pre>"
+                    },
+                    {
+                        "Title": "5. Did user read/open email?",
+                        "Description": "<p>Check delivery action for this subject.</p><br><strong>Run KQL:</strong><pre>EmailPostDeliveryEvents\n| where ActionType == 'Read'\n| join kind=inner (EmailEvents | where Subject == '@{triggerBody()?['object']?['properties']?['title']}') on NetworkMessageId</pre>"
+                    },
+                    {
+                        "Title": "6. Who else got the same email?",
+                        "Description": "<p>Scope the attack by Sender.</p><br><strong>Run KQL:</strong><pre>EmailEvents\n| where SenderIPv4 == '@{coalesce(body('Entities_-_Get')?['Ips']?[0]?['Address'], 'NO_IP_FOUND')}'\n| summarize count() by RecipientEmailAddress</pre>"
+                    },
+                    {
+                        "Title": "7. Check for Attachment",
+                        "Description": "<p>Get attachment details for this subject.</p><br><strong>Run KQL:</strong><pre>EmailAttachmentInfo\n| join kind=inner (EmailEvents | where Subject == '@{triggerBody()?['object']?['properties']?['title']}') on NetworkMessageId</pre>"
+                    },
+                    {
+                        "Title": "8. Analyze Attachment Payload",
+                        "Description": "<p>Check file hash.</p><br><strong>Run KQL:</strong><pre>EmailAttachmentInfo\n| join kind=inner (EmailEvents | where Subject == '@{triggerBody()?['object']?['properties']?['title']}') on NetworkMessageId\n| project SHA256, FileName</pre>"
+                    },
+                    {
+                        "Title": "9. Check True Sender Source",
+                        "Description": "<p>Analyze IP and Headers.</p><br><strong>Run KQL:</strong><pre>EmailEvents\n| where Subject == '@{triggerBody()?['object']?['properties']?['title']}'\n| project SenderIPv4, AuthenticationDetails</pre>"
+                    },
+                    {
+                        "Title": "10. Find Email Message ID",
+                        "Description": "<p>Get the IDs for tracking.</p><br><strong>Run KQL:</strong><pre>EmailEvents\n| where Subject == '@{triggerBody()?['object']?['properties']?['title']}'\n| project NetworkMessageId, InternetMessageId</pre>"
+                    },
+                    {
+                        "Title": "11. Did user click links?",
+                        "Description": "<p>Verify Clicks on the specific URL found in alert.</p><br><strong>Run KQL:</strong><pre>UrlClickEvents\n| where Url has '@{coalesce(body('Entities_-_Get')?['Urls']?[0]?['Url'], 'NO_URL_FOUND')}'\n| project TimeGenerated, ActionType</pre>"
+                    },
+                    {
+                        "Title": "12. Identify Endpoint",
+                        "Description": "<p>Find the machine name associated with the click.</p><br><strong>Run KQL:</strong><pre>DeviceNetworkEvents\n| where RemoteUrl has '@{coalesce(body('Entities_-_Get')?['Urls']?[0]?['Url'], 'NO_URL_FOUND')}'\n| project DeviceName, DeviceId</pre>"
+                    },
+                    {
+                        "Title": "13. Destination Touched?",
+                        "Description": "<p>Did the device connect to the Malicious IP?</p><br><strong>Run KQL:</strong><pre>DeviceNetworkEvents\n| where RemoteIP == '@{coalesce(body('Entities_-_Get')?['Ips']?[0]?['Address'], 'NO_IP_FOUND')}'\n| where ActionType == 'ConnectionSuccess'</pre>"
+                    },
+                    {
+                        "Title": "14. Federated Sign-in Logs",
+                        "Description": "<p>Check ADFS logs for the user.</p><br><strong>Run KQL:</strong><pre>IdentityLogonEvents\n| where AccountUpn == '@{coalesce(body('Entities_-_Get')?['Accounts']?[0]?['Name'], 'NO_USER_FOUND')}'\n| where LogonType == 'Federated'</pre>"
+                    },
+                    {
+                        "Title": "15
