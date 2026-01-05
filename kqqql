@@ -1,10 +1,12 @@
-let szOperationNames = dynamic(["Microsoft.Compute/virtualMachines/write", "Microsoft.Resources/deployments/write", "Microsoft.Resources/subscriptions/resourceGroups/write"]);
+// Anchor the query to the specific time the incident occurred
+let IncidentTime = datetime(@{triggerBody()?['object']?['properties']?['lastModifiedTimeUtc']});
 AzureActivity
-| where TimeGenerated > ago(14d)
-| where OperationNameValue in~ (szOperationNames)
+// Look for activity 4 hours before and 4 hours after the incident
+| where TimeGenerated between ((IncidentTime - 4h) .. (IncidentTime + 4h))
+// Get the most recent action in that window
 | top 1 by TimeGenerated desc
-// Use @@ to escape the symbol in Logic Apps
-| extend Name = iif(Caller has '@@',tostring(split(Caller,'@@',0)[0]),"")
-| extend UPNSuffix = iif(Caller has '@@',tostring(split(Caller,'@@',1)[0]),"")
-| extend AadUserId = iif(Caller !has '@@',Caller,"")
+// Parse the user details
+| extend Name = iif(Caller has '@',tostring(split(Caller,'@',0)[0]),"")
+| extend UPNSuffix = iif(Caller has '@',tostring(split(Caller,'@',1)[0]),"")
+| extend AadUserId = iif(Caller !has '@',Caller,"")
 | project Name, Caller, UPNSuffix, AadUserId, CallerIpAddress, ResourceId=_ResourceId
