@@ -1,0 +1,335 @@
+{
+    "definition": {
+        "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+        "actions": {
+            "Add_comment_to_incident_-_Entities": {
+                "inputs": {
+                    "body": {
+                        "incidentArmId": "@triggerBody()?['object']?['id']",
+                        "message": "<p><strong>🛡️ Automated Entity Analysis</strong></p>\n<p>The following entities were mapped directly from the incident context:</p>\n<br>\n@{body('Create_HTML_table')}"
+                    },
+                    "host": {
+                        "connection": {
+                            "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                        }
+                    },
+                    "method": "post",
+                    "path": "/Incidents/Comment"
+                },
+                "runAfter": {
+                    "Create_HTML_table": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "ApiConnection"
+            },
+            "Compose_Entity_Data": {
+                "inputs": [
+                    {
+                        "AAD User ID": "@{first(body('Entities_-_Get_Accounts')?['Accounts'])?['AadUserId']}",
+                        "Address": "@{first(body('Entities_-_Get_IPs')?['IPs'])?['Address']}",
+                        "Caller Name": "@{first(body('Entities_-_Get_Accounts')?['Accounts'])?['Name']}",
+                        "Caller UPN": "@{first(body('Entities_-_Get_Accounts')?['Accounts'])?['UPNSuffix']}",
+                        "Resource ID": "@{first(body('Entities_-_Get_Azure_Resources')?['Resources'])?['ResourceId']}"
+                    }
+                ],
+                "runAfter": {
+                    "Entities_-_Get_Accounts": [
+                        "Succeeded",
+                        "Failed",
+                        "Skipped"
+                    ],
+                    "Entities_-_Get_Azure_Resources": [
+                        "Succeeded",
+                        "Failed",
+                        "Skipped"
+                    ],
+                    "Entities_-_Get_IPs": [
+                        "Succeeded",
+                        "Failed",
+                        "Skipped"
+                    ]
+                },
+                "type": "Compose"
+            },
+            "Compose_Response": {
+                "inputs": "@body('Post_adaptive_card_and_wait_for_a_response')?['data']?['id']",
+                "runAfter": {
+                    "Post_adaptive_card_and_wait_for_a_response": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "Compose"
+            },
+            "Condition": {
+                "actions": {
+                    "Add_comment_to_incident_-_BAU": {
+                        "inputs": {
+                            "body": {
+                                "incidentArmId": "@triggerBody()?['object']?['id']",
+                                "message": "✅ <strong>User Confirmed via Teams</strong><br>\nThe user @{first(body('Entities_-_Get_Accounts')?['Accounts'])?['Name']} has confirmed this activity is authorized (BAU)."
+                            },
+                            "host": {
+                                "connection": {
+                                    "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                                }
+                            },
+                            "method": "post",
+                            "path": "/Incidents/Comment"
+                        },
+                        "runAfter": {},
+                        "type": "ApiConnection"
+                    }
+                },
+                "else": {
+                    "actions": {
+                        "Add_comment_to_incident_-_Escalate": {
+                            "inputs": {
+                                "body": {
+                                    "incidentArmId": "@triggerBody()?['object']?['id']",
+                                    "message": "❌ <strong>User Denied Activity</strong><br>\nThe user explicitly denied performing this action. Immediate investigation required."
+                                },
+                                "host": {
+                                    "connection": {
+                                        "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                                    }
+                                },
+                                "method": "post",
+                                "path": "/Incidents/Comment"
+                            },
+                            "runAfter": {},
+                            "type": "ApiConnection"
+                        }
+                    }
+                },
+                "expression": {
+                    "and": [
+                        {
+                            "equals": [
+                                "@outputs('Compose_Response')",
+                                "yes"
+                            ]
+                        }
+                    ]
+                },
+                "runAfter": {
+                    "Compose_Response": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "If"
+            },
+            "Create_HTML_table": {
+                "inputs": {
+                    "format": "HTML",
+                    "from": "@outputs('Compose_Entity_Data')"
+                },
+                "runAfter": {
+                    "Compose_Entity_Data": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "Table"
+            },
+            "Create_a_chat": {
+                "inputs": {
+                    "body": {
+                        "chatType": "Group",
+                        "members": "@{triggerBody()?['object']?['properties']?['owner']?['email']};@{first(body('Entities_-_Get_Accounts')?['Accounts'])?['UPNSuffix']}",
+                        "topic": "Security Incident #@{triggerBody()?['object']?['properties']?['incidentNumber']} Verification"
+                    },
+                    "host": {
+                        "connection": {
+                            "name": "@parameters('$connections')['teams']['connectionId']"
+                        }
+                    },
+                    "method": "post",
+                    "path": "/v1.0/teams/chats"
+                },
+                "runAfter": {
+                    "Add_comment_to_incident_-_Entities": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "ApiConnection"
+            },
+            "Entities_-_Get_Accounts": {
+                "inputs": {
+                    "body": {
+                        "id": "@triggerBody()?['object']?['id']"
+                    },
+                    "host": {
+                        "connection": {
+                            "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                        }
+                    },
+                    "method": "post",
+                    "path": "/Incidents/Entities/Accounts"
+                },
+                "runAfter": {},
+                "type": "ApiConnection"
+            },
+            "Entities_-_Get_Azure_Resources": {
+                "inputs": {
+                    "body": {
+                        "id": "@triggerBody()?['object']?['id']"
+                    },
+                    "host": {
+                        "connection": {
+                            "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                        }
+                    },
+                    "method": "post",
+                    "path": "/Incidents/Entities/AzureResources"
+                },
+                "runAfter": {},
+                "type": "ApiConnection"
+            },
+            "Entities_-_Get_IPs": {
+                "inputs": {
+                    "body": {
+                        "id": "@triggerBody()?['object']?['id']"
+                    },
+                    "host": {
+                        "connection": {
+                            "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                        }
+                    },
+                    "method": "post",
+                    "path": "/Incidents/Entities/IPs"
+                },
+                "runAfter": {},
+                "type": "ApiConnection"
+            },
+            "Post_adaptive_card_and_wait_for_a_response": {
+                "inputs": {
+                    "body": {
+                        "body": {
+                            "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+                            "actions": [
+                                {
+                                    "data": {
+                                        "id": "yes"
+                                    },
+                                    "title": "✅ Yes, I did this",
+                                    "type": "Action.Submit"
+                                },
+                                {
+                                    "data": {
+                                        "id": "no"
+                                    },
+                                    "title": "❌ No, NOT me",
+                                    "type": "Action.Submit"
+                                }
+                            ],
+                            "body": [
+                                {
+                                    "color": "Attention",
+                                    "size": "Medium",
+                                    "text": "Security Verification Request",
+                                    "type": "TextBlock",
+                                    "weight": "Bolder"
+                                },
+                                {
+                                    "text": "Hi @{first(body('Entities_-_Get_Accounts')?['Accounts'])?['Name']},",
+                                    "type": "TextBlock",
+                                    "wrap": true
+                                },
+                                {
+                                    "text": "An incident was triggered on your account. Sentinel detected the following threat:",
+                                    "type": "TextBlock",
+                                    "wrap": true
+                                },
+                                {
+                                    "items": [
+                                        {
+                                            "facts": [
+                                                {
+                                                    "title": "Incident Title:",
+                                                    "value": "@{triggerBody()?['object']?['properties']?['title']}"
+                                                },
+                                                {
+                                                    "title": "Severity:",
+                                                    "value": "@{triggerBody()?['object']?['properties']?['severity']}"
+                                                },
+                                                {
+                                                    "title": "Attacker IP:",
+                                                    "value": "@{first(body('Entities_-_Get_IPs')?['IPs'])?['Address']}"
+                                                }
+                                            ],
+                                            "type": "FactSet"
+                                        }
+                                    ],
+                                    "style": "emphasis",
+                                    "type": "Container"
+                                },
+                                {
+                                    "size": "Medium",
+                                    "spacing": "Medium",
+                                    "text": "Was this activity authorized by you?",
+                                    "type": "TextBlock",
+                                    "weight": "Bolder"
+                                }
+                            ],
+                            "type": "AdaptiveCard",
+                            "version": "1.4"
+                        },
+                        "notificationUrl": "@{listCallbackUrl()}"
+                    },
+                    "host": {
+                        "connection": {
+                            "name": "@parameters('$connections')['teams']['connectionId']"
+                        }
+                    },
+                    "path": "/v1.0/teams/conversation/poster/Flow bot/location/Group chat/conversation/@{encodeURIComponent(body('Create_a_chat')?['id'])}/adaptivecard/action"
+                },
+                "runAfter": {
+                    "Create_a_chat": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "ApiConnectionWebhook"
+            }
+        },
+        "contentVersion": "1.0.0.0",
+        "outputs": {},
+        "parameters": {
+            "$connections": {
+                "defaultValue": {},
+                "type": "Object"
+            }
+        },
+        "triggers": {
+            "Microsoft_Sentinel_incident": {
+                "inputs": {
+                    "body": {
+                        "callback_url": "@{listCallbackUrl()}"
+                    },
+                    "host": {
+                        "connection": {
+                            "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                        }
+                    },
+                    "path": "/incident-creation"
+                },
+                "type": "ApiConnectionWebhook"
+            }
+        }
+    },
+    "parameters": {
+        "$connections": {
+            "value": {
+                "azuresentinel": {
+                    "connectionId": "/subscriptions/YOUR_SUBSCRIPTION_ID/resourceGroups/YOUR_RESOURCE_GROUP/providers/Microsoft.Web/connections/azuresentinel",
+                    "connectionName": "azuresentinel",
+                    "id": "/subscriptions/YOUR_SUBSCRIPTION_ID/providers/Microsoft.Web/locations/YOUR_LOCATION/managedApis/azuresentinel"
+                },
+                "teams": {
+                    "connectionId": "/subscriptions/YOUR_SUBSCRIPTION_ID/resourceGroups/YOUR_RESOURCE_GROUP/providers/Microsoft.Web/connections/teams",
+                    "connectionName": "teams",
+                    "id": "/subscriptions/YOUR_SUBSCRIPTION_ID/providers/Microsoft.Web/locations/YOUR_LOCATION/managedApis/teams"
+                }
+            }
+        }
+    }
+}
