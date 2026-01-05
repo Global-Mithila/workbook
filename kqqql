@@ -1,0 +1,10 @@
+let szOperationNames = dynamic(["Microsoft.Compute/virtualMachines/write", "Microsoft.Resources/deployments/write", "Microsoft.Resources/subscriptions/resourceGroups/write"]);
+AzureActivity
+| where TimeGenerated > ago(14d)
+| where OperationNameValue in~ (szOperationNames)
+| top 1 by TimeGenerated desc
+// Use @@ to escape the symbol in Logic Apps
+| extend Name = iif(Caller has '@@',tostring(split(Caller,'@@',0)[0]),"")
+| extend UPNSuffix = iif(Caller has '@@',tostring(split(Caller,'@@',1)[0]),"")
+| extend AadUserId = iif(Caller !has '@@',Caller,"")
+| project Name, Caller, UPNSuffix, AadUserId, CallerIpAddress, ResourceId=_ResourceId
