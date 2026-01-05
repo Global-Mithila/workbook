@@ -1,0 +1,22 @@
+// Find the Alert associated with this Incident
+SecurityAlert
+| where TimeGenerated > ago(14d)
+// Link the Alert to the specific Incident Number from the Trigger
+| where SystemAlertId in (
+    SecurityIncident
+    | where IncidentNumber == @{triggerBody()?['object']?['properties']?['incidentNumber']}
+    | mv-expand AlertIds
+    | extend AlertIds = tostring(AlertIds)
+    | project AlertIds
+)
+// Parse the User details directly from the Alert Properties
+| extend User = tostring(parse_json(ExtendedProperties).["User Account"])
+| extend ClientIP = tostring(parse_json(ExtendedProperties).["Client IP Address"])
+// Fallback: If "User Account" is empty, look at the Entities column
+| extend EntityUser = tostring(parse_json(Entities)[0].Name)
+| extend FinalUser = coalesce(User, EntityUser, "Unknown User")
+// Logic App Parsing (Split string)
+| extend Name = iif(FinalUser has '@',tostring(split(FinalUser,'@',0)[0]), FinalUser)
+| extend UPNSuffix = iif(FinalUser has '@',tostring(split(FinalUser,'@',1)[0]),"")
+| project Name, Caller=FinalUser, UPNSuffix, CallerIpAddress=ClientIP, ResourceId=providerResourceId
+| take 1
