@@ -1,0 +1,9 @@
+AzureActivity
+| where TimeGenerated > ago(14d)
+// Get the absolute latest thing this user did (Read, Write, anything)
+| top 1 by TimeGenerated desc
+// Parse the names
+| extend Name = iif(Caller has '@',tostring(split(Caller,'@',0)[0]),"")
+| extend UPNSuffix = iif(Caller has '@',tostring(split(Caller,'@',1)[0]),"")
+| extend AadUserId = iif(Caller !has '@',Caller,"")
+| project Name, Caller, UPNSuffix, AadUserId, CallerIpAddress, ResourceId=_ResourceId
