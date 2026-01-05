@@ -1,0 +1,31 @@
+{
+    "statusCode": 200,
+    "headers": {
+        "Cache-Control": "no-store, no-cache",
+        "Pragma": "no-cache",
+        "Transfer-Encoding": "chunked",
+        "Vary": "Accept-Encoding",
+        "Set-Cookie": "ARRAffinity=c2b9d69c51fd5a6df044daf7280a107ee9fa39e756a902b2cf656c1a7f494e34;Path=/;HttpOnly;Secure;Domain=azuremonitorlogs-ncus.azconn-ncus-001.p.azurewebsites.net,ARRAffinitySameSite=c2b9d69c51fd5a6df044daf7280a107ee9fa39e756a902b2cf656c1a7f494e34;Path=/;HttpOnly;SameSite=None;Secure;Domain=azuremonitorlogs-ncus.azconn-ncus-001.p.azurewebsites.net",
+        "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
+        "x-ms-request-id": "c7b14075-ecaa-4615-ab69-2f784aebadcc",
+        "X-Content-Type-Options": "nosniff",
+        "X-Frame-Options": "DENY",
+        "x-ms-subscription-id": "2BC08258-7E51-4D3A-9145-CF145941D921",
+        "x-ms-dlp-re": "-|-",
+        "x-ms-dlp-gu": "-|-",
+        "x-ms-dlp-ef": "-|-/-|-|-",
+        "x-ms-mip-sl": "-|-|-|-",
+        "x-ms-au-caller-id": "b2d75074-5eef-43ac-864b-2719daf51175",
+        "x-ms-au-creator-id": "0ffb06af-3ced-4466-84b9-6d221c222179",
+        "Timing-Allow-Origin": "*",
+        "x-ms-apihub-cached-response": "false",
+        "x-ms-apihub-obo": "false",
+        "Date": "Fri, 02 Jan 2026 18:39:26 GMT",
+        "Content-Type": "application/json; charset=utf-8",
+        "Expires": "-1",
+        "Content-Length": "12"
+    },
+    "body": {
+        "value": []
+    }
+}
