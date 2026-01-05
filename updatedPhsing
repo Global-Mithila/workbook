@@ -1,0 +1,138 @@
+{
+    "definition": {
+        "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+        "actions": {
+            "Condition_-_Is_Phishing": {
+                "actions": {
+                    "Entities_-_Get": {
+                        "inputs": {
+                            "body": {
+                                "incidentId": "@triggerBody()?['object']?['id']"
+                            },
+                            "host": {
+                                "connection": {
+                                    "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                                }
+                            },
+                            "method": "post",
+                            "path": "/Incidents/@{encodeURIComponent(triggerBody()?['object']?['id'])}/entities"
+                        },
+                        "runAfter": {},
+                        "type": "ApiConnection"
+                    },
+                    "Initialize_Smart_Checklist_HTML": {
+                        "inputs": {
+                            "variables": [
+                                {
+                                    "name": "Checklist",
+                                    "type": "Array",
+                                    "value": [
+                                        {
+                                            "Title": "1. Investigate User Activity",
+                                            "Description": "<p>Check if the specific user read the email or accessed mail items.</p><br><strong>Run this KQL:</strong><pre>CloudAppEvents\n| where AccountUpn == '@{coalesce(body('Entities_-_Get')?['Accounts']?[0]?['Name'], 'NO_USER_FOUND')}'\n| where ActionType == 'MailItemsAccessed'</pre>"
+                                        },
+                                        {
+                                            "Title": "2. Verify Clicks (Specific URL)",
+                                            "Description": "<p>Did the user click the specific malicious link found in this alert?</p><br><strong>Run this KQL:</strong><pre>UrlClickEvents\n| where Url has '@{coalesce(body('Entities_-_Get')?['Urls']?[0]?['Url'], 'NO_URL_FOUND')}'\n| project TimeGenerated, ActionType</pre>"
+                                        },
+                                        {
+                                            "Title": "3. Scope by Sender IP",
+                                            "Description": "<p>Find other emails from this specific Source IP.</p><br><strong>Run this KQL:</strong><pre>EmailEvents\n| where SenderIPv4 == '@{coalesce(body('Entities_-_Get')?['Ips']?[0]?['Address'], 'NO_IP_FOUND')}'\n| summarize count() by RecipientEmailAddress</pre>"
+                                        },
+                                        {
+                                            "Title": "4. Check Device Connections",
+                                            "Description": "<p>Did any device connect to this malicious IP?</p><br><strong>Run this KQL:</strong><pre>DeviceNetworkEvents\n| where RemoteIP == '@{coalesce(body('Entities_-_Get')?['Ips']?[0]?['Address'], 'NO_IP_FOUND')}'\n| where ActionType == 'ConnectionSuccess'</pre>"
+                                        }
+                                    ]
+                                }
+                            ]
+                        },
+                        "runAfter": {
+                            "Entities_-_Get": [
+                                "Succeeded"
+                            ]
+                        },
+                        "type": "InitializeVariable"
+                    },
+                    "For_each_Smart_Task": {
+                        "actions": {
+                            "Add_Task_to_Incident": {
+                                "inputs": {
+                                    "body": {
+                                        "description": "@{items('For_each_Smart_Task')?['Description']}",
+                                        "status": "New",
+                                        "title": "@{items('For_each_Smart_Task')?['Title']}"
+                                    },
+                                    "host": {
+                                        "connection": {
+                                            "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                                        }
+                                    },
+                                    "method": "post",
+                                    "path": "/Incidents/@{encodeURIComponent(triggerBody()?['object']?['name'])}/tasks"
+                                },
+                                "runAfter": {},
+                                "type": "ApiConnection"
+                            }
+                        },
+                        "foreach": "@variables('Checklist')",
+                        "runAfter": {
+                            "Initialize_Smart_Checklist_HTML": [
+                                "Succeeded"
+                            ]
+                        },
+                        "type": "Foreach"
+                    }
+                },
+                "expression": {
+                    "or": [
+                        {
+                            "contains": [
+                                "@triggerBody()?['object']?['properties']?['title']",
+                                "Phish"
+                            ]
+                        },
+                        {
+                            "contains": [
+                                "@triggerBody()?['object']?['properties']?['description']",
+                                "Phish"
+                            ]
+                        }
+                    ]
+                },
+                "runAfter": {},
+                "type": "If"
+            }
+        },
+        "contentVersion": "1.0.0.0",
+        "outputs": {},
+        "parameters": {
+            "$connections": {
+                "defaultValue": {},
+                "type": "Object"
+            }
+        },
+        "triggers": {
+            "Microsoft_Sentinel_incident": {
+                "inputs": {
+                    "host": {
+                        "connection": {
+                            "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                        }
+                    },
+                    "path": "/incident-creation"
+                },
+                "recurrence": {
+                    "frequency": "Minute",
+                    "interval": 5
+                },
+                "type": "ApiConnection"
+            }
+        }
+    },
+    "parameters": {
+        "$connections": {
+            "value": {}
+        }
+    }
+}
