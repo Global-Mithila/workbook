@@ -77,4 +77,88 @@
                         "Description": "<p>Check ADFS logs for the user.</p><br><strong>Run KQL:</strong><pre>IdentityLogonEvents\n| where AccountUpn == '@{coalesce(body('Entities_-_Get')?['Accounts']?[0]?['Name'], 'NO_USER_FOUND')}'\n| where LogonType == 'Federated'</pre>"
                     },
                     {
-                        "Title": "15
+                        "Title": "15. Managed Sign-in Logs",
+                        "Description": "<p>Check Entra ID logs for the user.</p><br><strong>Run KQL:</strong><pre>IdentityLogonEvents\n| where AccountUpn == '@{coalesce(body('Entities_-_Get')?['Accounts']?[0]?['Name'], 'NO_USER_FOUND')}'</pre>"
+                    },
+                    {
+                        "Title": "16. Investigate Source IP",
+                        "Description": "<p>Check Sender IP activity.</p><br><strong>Run KQL:</strong><pre>DeviceNetworkEvents\n| where RemoteIP == '@{coalesce(body('Entities_-_Get')?['Ips']?[0]?['Address'], 'NO_IP_FOUND')}'</pre>"
+                    },
+                    {
+                        "Title": "17. Investigate Device ID",
+                        "Description": "<p>Check device timeline for the endpoint involved.</p><br><strong>Run KQL:</strong><pre>DeviceEvents\n| where DeviceName has '@{coalesce(body('Entities_-_Get')?['Hosts']?[0]?['HostName'], 'NO_DEVICE_FOUND')}'\n| limit 100</pre>"
+                    },
+                    {
+                        "Title": "18. Investigate App ID",
+                        "Description": "<p>Check for malicious Apps added by user.</p><br><strong>Run KQL:</strong><pre>CloudAppEvents\n| where ActionType == 'Add service principal'\n| where AccountUpn == '@{coalesce(body('Entities_-_Get')?['Accounts']?[0]?['Name'], 'NO_USER_FOUND')}'</pre>"
+                    }
+                ],
+                "runAfter": {
+                    "Entities_-_Get": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "Compose"
+            },
+            "For_each_Pro_Task": {
+                "actions": {
+                    "Add_Task_to_Incident": {
+                        "inputs": {
+                            "body": {
+                                "description": "@{items('For_each_Pro_Task')?['Description']}",
+                                "status": "New",
+                                "title": "@{items('For_each_Pro_Task')?['Title']}"
+                            },
+                            "host": {
+                                "connection": {
+                                    "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                                }
+                            },
+                            "method": "post",
+                            "path": "/Incidents/@{encodeURIComponent(triggerBody()?['object']?['name'])}/tasks"
+                        },
+                        "runAfter": {},
+                        "type": "ApiConnection"
+                    }
+                },
+                "foreach": "@outputs('Construct_Checklist')",
+                "runAfter": {
+                    "Construct_Checklist": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "Foreach"
+            }
+        },
+        "contentVersion": "1.0.0.0",
+        "outputs": {},
+        "parameters": {
+            "$connections": {
+                "defaultValue": {},
+                "type": "Object"
+            }
+        },
+        "triggers": {
+            "Microsoft_Sentinel_incident": {
+                "inputs": {
+                    "host": {
+                        "connection": {
+                            "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                        }
+                    },
+                    "path": "/incident-creation"
+                },
+                "recurrence": {
+                    "frequency": "Minute",
+                    "interval": 5
+                },
+                "type": "ApiConnection"
+            }
+        }
+    },
+    "parameters": {
+        "$connections": {
+            "value": {}
+        }
+    }
+}
