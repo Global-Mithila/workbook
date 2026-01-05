@@ -1,0 +1,20 @@
+// 1. Remove the specific target variable to match your Portal query
+let szOperationNames = dynamic(["Microsoft.Compute/virtualMachines/write", "Microsoft.Resources/deployments/write", "Microsoft.Resources/subscriptions/resourceGroups/write"]);
+// 2. INCREASE the time window to ensuring we catch the data you see in the portal
+let starttime = 30d; 
+let endtime = 0d; // Look right up to the present moment
+let RareCaller = union AzureActivity
+| where TimeGenerated between (ago(starttime) .. ago(endtime))
+| where OperationNameValue in~ (szOperationNames)
+| summarize count() by CallerIpAddress, Caller, OperationNameValue, bin(TimeGenerated,1d)
+| join kind=rightantisemi (
+union AzureActivity
+| where TimeGenerated > ago(endtime)
+| where OperationNameValue in~ (szOperationNames)
+| summarize StartTimeUtc = min(TimeGenerated), EndTimeUtc = max(TimeGenerated), ActivityTimeStamp = make_set(TimeGenerated,100), ActivityStatusValue = make_set(ActivityStatusValue,100), CorrelationIds = make_set(CorrelationId,100), ResourceGroups = make_set(ResourceGroup,100), ResourceIds = make_set(_ResourceId,100), ActivityCountByCallerIPAddress = count()
+by CallerIpAddress, Caller, OperationNameValue) on CallerIpAddress, Caller, OperationNameValue;
+RareCaller
+| extend Name = iif(Caller has '@',tostring(split(Caller,'@',0)[0]),"")
+| extend UPNSuffix = iif(Caller has '@',tostring(split(Caller,'@',1)[0]),"")
+| extend AadUserId = iif(Caller !has '@',Caller,"")
+| project CallerIpAddress, Name, Caller, OperationNameValue, StartTimeUtc, EndTimeUtc, ResourceIds
