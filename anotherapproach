@@ -23,38 +23,6 @@
                 },
                 "type": "ApiConnection"
             },
-            "Add_comment_to_incident_-_BAU": {
-                "inputs": {
-                    "body": {
-                        "incidentArmId": "@triggerBody()?['object']?['id']",
-                        "message": "✅ <strong>User Confirmed via Teams</strong><br>\nThe user @{outputs('Compose_Entity_Data')?['Name']} has confirmed this activity is authorized (BAU)."
-                    },
-                    "host": {
-                        "connection": {
-                            "name": "@parameters('$connections')['azuresentinel']['connectionId']"
-                        }
-                    },
-                    "method": "post",
-                    "path": "/Incidents/Comment"
-                },
-                "type": "ApiConnection"
-            },
-            "Add_comment_to_incident_-_Escalate": {
-                "inputs": {
-                    "body": {
-                        "incidentArmId": "@triggerBody()?['object']?['id']",
-                        "message": "❌ <strong>User Denied Activity</strong><br>\nThe user explicitly denied performing this action. Immediate investigation required."
-                    },
-                    "host": {
-                        "connection": {
-                            "name": "@parameters('$connections')['azuresentinel']['connectionId']"
-                        }
-                    },
-                    "method": "post",
-                    "path": "/Incidents/Comment"
-                },
-                "type": "ApiConnection"
-            },
             "Compose_Entity_Data": {
                 "inputs": {
                     "AAD_ID": "@{body('Run_KQL_Hunting_Query')?['value']?[0]?['AadUserId']}",
